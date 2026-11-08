@@ -1,0 +1,1827 @@
+<!doctype html>
+<html lang="de" data-theme="gloss" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16191c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pottschatz Kasse">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Pottschatz Kasse</title>
+<!--
+  Pottschatz Kasse – Version 11 (Gloss)
+  Zugehörige Dateien (alle im SELBEN Ordner, Namen klein geschrieben!):
+    index.html · sw.js · manifest.webmanifest · icon-180.png · icon-192.png · icon-512.png · icon-maskable-512.png
+  - Offline über Service Worker (sw.js), Update-Hinweis statt stiller Aktualisierung
+  - Beträge in Cent · Doppelte Speicherung (localStorage + IndexedDB) · Storno statt Löschen
+-->
+<style>
+/* =====================================================================
+   POTTSCHATZ KASSE V11 – Gloss Design System
+   - Glanz über Verläufe & Lichtkanten (billig) statt Blur auf vielen Elementen
+   - backdrop-filter NUR auf HUD + Dialog (je 1 Element, mit -webkit-Präfix)
+   - Animationen nur transform/opacity · alle Text/Fläche-Paare ≥ 4,5:1
+   - Text NIE über opacity abschwächen (senkt den Kontrast) – dafür gibt es --muted
+   Aufbau der Tokens (Übersicht auch in LIESMICH.md):
+     1a Grundwerte (Schrift, Abstände, Radien, Bewegung, feste Farben)
+     1b Modus-Tokens  [data-mode="dark|light"]  – Flächen, Linien, Status, Schatten
+     1c Theme-Tokens  [data-theme="…"]          – Hintergrund, Text, Akzentfarbe
+   Komponenten verwenden NUR var(--…), keine festen Werte.
+   ===================================================================== */
+
+/* ---------- 1a. Grundwerte ---------- */
+:root{
+  /* Skalierung (per A−/A+ und Breitenregler, von JS gesetzt) */
+  --prod-scale:1; --order-scale:1; --order-w:430px;
+
+  /* Schrift */
+  --font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,Roboto,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --fs-xs:12px; --fs-s:14px; --fs-m:15px; --fs-base:16px; --fs-l:18px; --fs-xl:21px; --fs-2xl:26px; --fs-3xl:42px; --fs-4xl:58px;
+  /* fließende Größen (wachsen mit dem Bildschirm) */
+  --fs-fluid-title:clamp(20px,2.3vw,25px);
+  --fs-fluid-tile-emoji:clamp(34px,4.6vmin,58px); --fs-fluid-tile-name:clamp(14px,2vmin,22px); --fs-fluid-tile-price:clamp(13px,1.7vmin,18px);
+  --fs-fluid-toast-title:clamp(22px,3.4vmin,29px); --fs-fluid-toast-amount:clamp(38px,6.5vmin,58px); --fs-fluid-toast-detail:clamp(15px,2.3vmin,19px);
+
+  /* Abstände (4-px-Raster mit Halbstufen) */
+  --space-3xs:2px; --space-2xs:4px; --space-xs:6px; --space-s:8px; --space-sm:10px; --space-m:12px;
+  --space-ml:14px; --space-l:16px; --space-xl:20px; --space-2xl:24px; --space-3xl:30px;
+
+  /* Tippflächen: mind. 44 pt (Apple-Empfehlung, auch mit Handschuhen) */
+  --tap-min:44px;
+
+  /* Radien */
+  --radius-xs:10px; --radius-s:14px; --radius-m:18px; --radius-l:24px; --radius-full:9999px;
+
+  /* Bewegung */
+  --ease:cubic-bezier(.16,1,.3,1); --spring:cubic-bezier(.34,1.56,.64,1);
+  --dur-instant:.08s; --dur-fast:.15s; --dur-base:.22s; --dur-slow:.36s;
+
+  /* Feste Farben (unabhängig vom Theme) */
+  --white:#fff; --black:#000;
+  --scrim:rgba(0,0,0,.55);                       /* Abdunklung hinter Dialogen */
+  --statusbar-scrim:rgba(15,23,42,.82);          /* Band hinter weißer iPad-Statusleiste */
+  --shadow-s:0 2px 8px rgba(0,0,0,.25);
+  --shadow-m:0 4px 12px rgba(0,0,0,.3);
+  --shadow-overlay:0 30px 90px rgba(0,0,0,.45);
+  --edge-light:rgba(255,255,255,.28);            /* Lichtkante an farbigen Knöpfen */
+  --inset-highlight:inset 0 1px 0 rgba(255,255,255,.35);
+  --danger-glow:0 8px 20px rgba(185,28,28,.28);
+  /* Fokusrahmen auf farbigen Kacheln: weiß + schwarz, damit er auf JEDER Farbe sichtbar ist */
+  --focus-inner:#fff; --focus-outer:#000;
+  /* Zähler-Badge & Knöpfe auf Produktkacheln */
+  --badge-bg:rgba(15,23,42,.86); --badge-fg:#fff; --badge-border:rgba(255,255,255,.3);
+  --tile-btn-bg:rgba(0,0,0,.30); --tile-btn-bg-hover:rgba(0,0,0,.45); --tile-btn-fg:#fff;
+  --tile-btn-bg-on-light:rgba(0,0,0,.09); --tile-btn-fg-on-light:#1f1f1f;
+  --tile-edge-bottom:rgba(0,0,0,.2); --tile-hairline-light:rgba(0,0,0,.06);
+  --tile-gloss-end:rgba(255,255,255,.04); --tile-emoji-shadow:rgba(0,0,0,.22); --tile-flash:#fff;
+
+  /* Theme „Pottschatz Gloss“ (Standard) – wird von [data-theme] überschrieben */
+  --bg-solid:#16191c; --bg-gradient:radial-gradient(circle at 50% 0%,#2a313a 0%,#121518 100%);
+  --text:#f8fafc; --muted:#b8c3d3;
+  --panel-bg:rgba(255,255,255,.05); --panel-border:rgba(255,255,255,.12);
+  --primary:#ffb703;
+  --primary-text:var(--primary);                 /* nur überschreiben, wenn Akzent als Schrift zu schwach ist */
+  --primary-gradient:linear-gradient(135deg,#ffb703 0%,#fb8500 100%);
+  --primary-glow:0 8px 24px rgba(251,133,0,.32); --on-primary:#1a0e00;
+  --ring:rgba(255,183,3,.35);
+  --danger-gradient:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%); --on-danger:#fff;
+  color-scheme:dark;
+}
+
+/* ---------- 1b. Modus-Tokens ---------- */
+[data-mode="dark"]{
+  --fill:rgba(255,255,255,.07); --fill-hover:rgba(255,255,255,.12); --fill-active:rgba(255,255,255,.18);
+  --border:rgba(255,255,255,.10); --border-strong:rgba(255,255,255,.24);
+  --success:#34d399; --danger:#fca5a5; --success-bg:rgba(52,211,153,.16); --danger-bg:rgba(248,113,113,.16);
+  --glass-shadow:0 20px 50px rgba(0,0,0,.40),inset 0 1px 0 rgba(255,255,255,.10);
+  --tile-shadow:0 10px 24px rgba(0,0,0,.35);
+  --modal-bg:rgba(26,29,34,.94); --hud-bg:rgba(20,23,27,.90); --hud-fg:#fff;
+  --console-bg:#0a0c0e; --console-fg:#4ade80;    /* Textfeld „Daten retten“ */
+}
+[data-mode="light"]{
+  --fill:rgba(0,0,0,.05); --fill-hover:rgba(0,0,0,.08); --fill-active:rgba(0,0,0,.13);
+  --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.22);
+  --success:#047857; --danger:#b91c1c; --success-bg:rgba(4,120,87,.10); --danger-bg:rgba(185,28,28,.09);
+  --glass-shadow:0 16px 40px rgba(0,0,0,.07),inset 0 1px 0 rgba(255,255,255,.9);
+  --tile-shadow:0 6px 18px rgba(0,0,0,.08);
+  --modal-bg:rgba(255,255,255,.96); --hud-bg:rgba(255,255,255,.94); --hud-fg:#0f172a;
+  --console-bg:#ffffff; --console-fg:#14532d;
+  color-scheme:light;
+}
+
+/* ---------- 1c. Theme-Tokens ---------- */
+/* Dunkle Themes */
+[data-theme="nachtblau"]{--bg-solid:#0f172a;--bg-gradient:radial-gradient(circle at 50% 0%,#1e293b 0%,#0b1220 100%);--primary:#38bdf8;--primary-gradient:linear-gradient(135deg,#38bdf8 0%,#0ea5e9 100%);--primary-glow:0 8px 24px rgba(14,165,233,.32);--on-primary:#03131f;--ring:rgba(56,189,248,.35)}
+[data-theme="tanne"]{--bg-solid:#0b1f13;--bg-gradient:radial-gradient(circle at 50% 0%,#143823 0%,#08170e 100%);--primary:#4ade80;--primary-gradient:linear-gradient(135deg,#4ade80 0%,#22c55e 100%);--primary-glow:0 8px 24px rgba(34,197,94,.30);--on-primary:#03190b;--ring:rgba(74,222,128,.35)}
+[data-theme="oled"]{--bg-solid:#000;--bg-gradient:linear-gradient(180deg,#000 0%,#050505 100%);--panel-bg:#0e0e0e;--panel-border:rgba(255,255,255,.28);--muted:#d4d4d4;--primary:#ffe600;--primary-gradient:linear-gradient(135deg,#ffe600 0%,#f5d000 100%);--primary-glow:none;--on-primary:#000;--ring:rgba(255,230,0,.45);--fill:#1b1b1b;--fill-hover:#262626;--fill-active:#333;--border:rgba(255,255,255,.24)}
+/* Helle Themes (Primärfarben so gewählt, dass weiße Schrift ≥ 4,5:1 hat) */
+[data-theme="creme"]{--bg-solid:#f6f0e6;--bg-gradient:radial-gradient(circle at 50% 0%,#fefcf8 0%,#f3ece0 100%);--text:#292524;--muted:#6b635c;--panel-bg:rgba(255,255,255,.72);--panel-border:rgba(214,206,194,.7);--primary:#c2410c;--primary-gradient:linear-gradient(135deg,#c2410c 0%,#9a3412 100%);--primary-glow:0 8px 22px rgba(194,65,12,.25);--on-primary:#fff;--ring:rgba(194,65,12,.28)}
+[data-theme="eisblau"]{--bg-solid:#eef2f7;--bg-gradient:radial-gradient(circle at 50% 0%,#f8fafc 0%,#e2e8f0 100%);--text:#0f172a;--muted:#526075;--panel-bg:rgba(255,255,255,.75);--panel-border:rgba(203,213,225,.8);--primary:#2563eb;--primary-gradient:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%);--primary-glow:0 8px 22px rgba(37,99,235,.25);--on-primary:#fff;--ring:rgba(37,99,235,.28)}
+[data-theme="schnee"]{--bg-solid:#f7f1ee;--bg-gradient:radial-gradient(circle at 50% 0%,#ffffff 0%,#f4ece9 100%);--text:#1c1917;--muted:#6b5f5a;--panel-bg:rgba(255,255,255,.78);--panel-border:rgba(231,222,218,.9);--primary:#dc2626;--primary-text:#b91c1c;--primary-gradient:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);--primary-glow:0 8px 22px rgba(220,38,38,.25);--on-primary:#fff;--ring:rgba(220,38,38,.26)}
+/* iPad-Einstellung „Kontrast erhöhen“: kräftigere Linien in jedem Theme */
+@media (prefers-contrast:more){
+  [data-mode]{--border:var(--border-strong);--panel-border:var(--border-strong)}
+}
+
+/* ---------- 2. Basis ---------- */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font-family:var(--font-sans);
+  background-color:var(--bg-solid);background-image:var(--bg-gradient);color:var(--text);
+  overflow:hidden;overscroll-behavior:none;-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+button,input,select{font:inherit;color:inherit}
+button{touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer;border:0;background:transparent}
+button:disabled{opacity:.38;cursor:not-allowed}
+:focus{outline:none}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.icon{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+h2{margin:0;font-size:var(--fs-l);font-weight:700;letter-spacing:-.015em}
+.overline{font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.app{height:100vh;height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr);gap:var(--space-ml);
+  padding:max(var(--space-ml),env(safe-area-inset-top)) max(var(--space-ml),env(safe-area-inset-right)) max(var(--space-ml),env(safe-area-inset-bottom)) max(var(--space-ml),env(safe-area-inset-left))}
+/* Statusleiste der Home-Bildschirm-App ist weiß ("black-translucent"): in hellen Themes dunkles Band dahinter */
+@media (display-mode:standalone){[data-mode="light"] body::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:var(--statusbar-scrim);z-index:50;pointer-events:none}}
+
+/* ---------- 3. Kopfzeile ---------- */
+header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-ml);flex-wrap:wrap;padding:0 var(--space-2xs)}
+h1{margin:0;font-size:var(--fs-fluid-title);font-weight:800;letter-spacing:-.03em}
+.chips{display:flex;gap:var(--space-s);flex-wrap:wrap;margin-top:var(--space-2xs)}
+.chip{display:inline-flex;align-items:center;gap:var(--space-xs);font-size:var(--fs-xs);font-weight:600;padding:var(--space-2xs) var(--space-m) var(--space-2xs) var(--space-sm);border-radius:var(--radius-full);background:var(--fill);color:var(--muted);border:1px solid var(--border);white-space:nowrap}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.6}
+.chip.good::before{background:var(--success);opacity:1;box-shadow:0 0 8px var(--success)}
+.chip.warn{color:var(--danger);background:var(--danger-bg);border-color:var(--danger-bg);font-weight:700}
+.chip.warn::before{background:var(--danger);opacity:1;box-shadow:0 0 8px var(--danger)}
+.chip.info{color:var(--primary-text);background:var(--fill);border-color:var(--primary-text);font-weight:700}
+.chip.info::before{background:var(--primary-text);opacity:1}
+.toolbar{display:flex;gap:var(--space-sm);align-items:center}
+.clock{font-variant-numeric:tabular-nums;font-weight:700;color:var(--muted);font-size:var(--fs-base);padding:0 var(--space-xs)}
+
+/* ---------- 4. Buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-s);border-radius:var(--radius-s);padding:var(--space-sm) var(--space-l);min-height:46px;
+  font-size:var(--fs-m);font-weight:600;background:var(--fill);color:var(--text);border:1px solid var(--border);
+  transition:transform var(--dur-fast) var(--ease),background-color var(--dur-base) var(--ease),border-color var(--dur-base),box-shadow var(--dur-base)}
+.btn:active:not(:disabled){transform:scale(.95);background:var(--fill-active)}
+.btn-primary{background:var(--primary-gradient);color:var(--on-primary);border:1px solid var(--edge-light);box-shadow:var(--primary-glow),var(--inset-highlight);font-weight:700}
+.btn-primary:active:not(:disabled){background:var(--primary-gradient)}
+.btn-primary:disabled{background:var(--fill-hover);color:var(--muted);box-shadow:none;border-color:var(--border);opacity:1}
+.btn-danger{background:var(--danger-gradient);color:var(--on-danger);border:1px solid var(--edge-light);box-shadow:var(--danger-glow);font-weight:700}
+.btn-danger:active:not(:disabled){background:var(--danger-gradient)}
+.btn-soft-danger{background:var(--danger-bg);color:var(--danger);border-color:transparent}
+.btn-sm{min-height:38px;padding:var(--space-xs) var(--space-ml);font-size:var(--fs-s);border-radius:var(--radius-xs)}
+.btn-sm .icon{width:16px;height:16px}
+@media (hover:hover){
+  .btn:hover:not(:disabled){background:var(--fill-hover);border-color:var(--border-strong)}
+  .btn-primary:hover:not(:disabled),.btn-danger:hover:not(:disabled){filter:brightness(1.07)}
+  .btn-primary:hover:not(:disabled){background:var(--primary-gradient)}
+  .btn-danger:hover:not(:disabled){background:var(--danger-gradient)}
+  .btn-soft-danger:hover:not(:disabled){background:var(--danger-bg);filter:brightness(1.08)}
+}
+.controls{display:flex;gap:var(--space-s);align-items:center}
+.segmented{display:inline-flex;background:var(--fill);border-radius:var(--radius-s);padding:var(--space-3xs);gap:var(--space-3xs);border:1px solid var(--border)}
+.segmented button[aria-pressed="true"]{background:var(--primary-gradient);color:var(--on-primary)}
+.segmented-lg button{min-width:96px;height:40px;font-size:var(--fs-s);padding:0 var(--space-m)}
+.segmented-lg button span{font-weight:600;margin-left:var(--space-2xs)}
+.notice{background:var(--fill);border:1px solid var(--border);padding:var(--space-m) var(--space-ml);border-radius:var(--radius-m);font-size:var(--fs-s);margin:0 0 var(--space-l);line-height:1.5;display:flex;gap:var(--space-m);align-items:center;justify-content:space-between;flex-wrap:wrap}
+.tag.tag-muted{background:var(--fill);color:var(--muted)}
+.segmented button{min-width:42px;height:34px;border-radius:var(--radius-xs);font-weight:700;font-size:var(--fs-s);color:var(--muted);transition:background-color var(--dur-fast),color var(--dur-fast),transform var(--dur-fast) var(--ease)}
+.segmented button:active{background:var(--fill-active);color:var(--text);transform:scale(.93)}
+@media (hover:hover){.segmented button:hover{color:var(--text)}}
+
+/* ---------- 5. Layout & Panels ---------- */
+main{display:grid;grid-template-columns:minmax(0,1fr) 18px min(var(--order-w),58vw);min-height:0}
+.panel{background:var(--panel-bg);border:1px solid var(--panel-border);border-radius:var(--radius-l);padding:var(--space-l);min-height:0;
+  display:flex;flex-direction:column;gap:var(--space-ml);box-shadow:var(--glass-shadow)}
+.panel-head{display:flex;justify-content:space-between;align-items:center;gap:var(--space-s);min-height:38px}
+.count{font-weight:600;color:var(--muted);font-size:var(--fs-s);margin-left:var(--space-xs)}
+#resizer{display:flex;align-items:center;justify-content:center;cursor:col-resize;touch-action:none}
+#resizer::before{content:"";width:5px;height:50px;border-radius:var(--radius-full);background:var(--muted);opacity:.35;transition:opacity var(--dur-base),height var(--dur-base) var(--ease),background-color var(--dur-base)}
+#resizer:active::before{opacity:.95;height:110px;background:var(--primary)}
+@media (hover:hover){#resizer:hover::before{opacity:.65}}
+
+/* ---------- 6. Produktkacheln (Gloss) ---------- */
+.grid{flex:1;min-height:0;overflow:auto;display:grid;gap:var(--space-m);padding:var(--space-2xs);margin:calc(var(--space-2xs) * -1);
+  grid-template-columns:repeat(auto-fill,minmax(calc(150px * var(--prod-scale)),1fr));
+  grid-auto-rows:minmax(calc(115px * var(--prod-scale)),1fr)}
+.pbtn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-s);padding:var(--space-ml) var(--space-sm);
+  border-radius:var(--radius-m);text-align:center;overflow:hidden;contain:layout paint;
+  --gloss:rgba(255,255,255,.26); --price-bg:rgba(0,0,0,.32); --edge-top:rgba(255,255,255,.35);
+  background-color:var(--tile-dark-bg);color:var(--tile-dark-fg);
+  box-shadow:var(--tile-shadow),inset 0 1px 0 var(--edge-top),inset 0 -1px 0 var(--tile-edge-bottom);
+  transition:transform var(--dur-fast) var(--ease)}
+[data-mode="light"] .pbtn{background-color:var(--tile-light-bg);color:var(--tile-light-fg)}
+/* Ton-abhängiger Glanz & Preis-Pille (verhindert unlesbare Pillen) */
+[data-mode="dark"] .pbtn[data-tone-dark="light"],[data-mode="light"] .pbtn[data-tone-light="light"]{--gloss:rgba(255,255,255,.45);--price-bg:rgba(255,255,255,.55);--edge-top:rgba(255,255,255,.8)}
+[data-mode="dark"] .pbtn[data-tone-dark="white"],[data-mode="light"] .pbtn[data-tone-light="white"]{--gloss:rgba(255,255,255,0);--price-bg:rgba(0,0,0,.06);--edge-top:rgba(255,255,255,.9)}
+[data-mode="light"] .pbtn{box-shadow:var(--tile-shadow),inset 0 0 0 1px var(--tile-hairline-light),inset 0 1px 0 var(--edge-top)}
+.pbtn::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(135deg,var(--gloss) 0%,var(--tile-gloss-end) 45%,transparent 46%)}
+.pbtn .pbtn-emoji{font-size:calc(var(--fs-fluid-tile-emoji) * var(--prod-scale));line-height:1;filter:drop-shadow(0 4px 6px var(--tile-emoji-shadow));transition:transform var(--dur-base) var(--ease)}
+.pbtn .pbtn-name{font-size:calc(var(--fs-fluid-tile-name) * var(--prod-scale));font-weight:700;line-height:1.15;letter-spacing:-.015em}
+.pbtn .pbtn-price{font-size:calc(var(--fs-fluid-tile-price) * var(--prod-scale));font-weight:700;padding:var(--space-2xs) var(--space-m);border-radius:var(--radius-full);background:var(--price-bg);font-variant-numeric:tabular-nums}
+.pbtn .badge{position:absolute;top:var(--space-sm);right:var(--space-sm);min-width:30px;height:30px;padding:0 var(--space-s);border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;
+  background:var(--badge-bg);color:var(--badge-fg);border:1.5px solid var(--badge-border);font-weight:800;font-size:var(--fs-s);font-variant-numeric:tabular-nums;box-shadow:var(--shadow-m)}
+.pbtn .badge[hidden]{display:none}
+.pbtn .badge.pop{animation:popBadge var(--dur-slow) var(--spring)}
+.pbtn::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--tile-flash);opacity:0;pointer-events:none}
+.pbtn.flash::after{animation:flashTouch var(--dur-slow) var(--ease)}
+.pbtn:active{transform:scale(.95)}
+.pbtn:active .pbtn-emoji{transform:scale(1.12)}
+@media (hover:hover){.pbtn:hover{transform:translateY(-3px)}.pbtn:active{transform:scale(.95)}}
+/* Fokus auf farbigen Kacheln: weißer Ring mit schwarzem Rand – auf jeder Kachelfarbe sichtbar */
+.ptile .pbtn:focus-visible{outline:3px solid var(--focus-inner);outline-offset:-4px;box-shadow:var(--tile-shadow),inset 0 0 0 7px var(--focus-outer)}
+@keyframes flashTouch{from{opacity:.4}to{opacity:0}}
+@keyframes popBadge{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+
+/* Produkt-Kachel mit Info-Knopf (Knopf liegt NEBEN der Kachel im DOM – keine verschachtelten Buttons) */
+.ptile{position:relative;display:flex;min-width:0;min-height:0}
+.ptile>.pbtn{flex:1;min-width:0}
+.info-btn{position:absolute;top:var(--space-xs);left:var(--space-xs);z-index:2;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--tile-btn-bg);color:var(--tile-btn-fg);transition:transform var(--dur-fast) var(--ease),background-color var(--dur-fast)}
+.info-btn:focus-visible{outline:3px solid var(--focus-inner);outline-offset:1px;box-shadow:0 0 0 5px var(--focus-outer)}
+.info-btn .icon{width:19px;height:19px;stroke-width:2.3}
+.info-btn:active{transform:scale(.86)}
+[data-mode="dark"] .ptile[data-tone-dark="light"] .info-btn,[data-mode="dark"] .ptile[data-tone-dark="white"] .info-btn,
+[data-mode="light"] .ptile[data-tone-light="light"] .info-btn,[data-mode="light"] .ptile[data-tone-light="white"] .info-btn{background:var(--tile-btn-bg-on-light);color:var(--tile-btn-fg-on-light)}
+@media (hover:hover){.info-btn:hover{background:var(--tile-btn-bg-hover);color:var(--tile-btn-fg)}}
+.info-card{background:var(--fill);border:1px solid var(--border);border-radius:var(--radius-m);padding:var(--space-ml) var(--space-l);margin-bottom:var(--space-sm);font-size:var(--fs-m);line-height:1.55}
+.info-card .overline{display:block;margin-bottom:var(--space-2xs)}
+.info-card.is-allergen{border-color:var(--danger-bg);background:var(--danger-bg)}
+.view-switch{margin:var(--space-2xs) 0 var(--space-ml)}
+
+/* Produkt-Bearbeitung */
+.edit-bar{display:flex;align-items:center;gap:var(--space-sm);padding:var(--space-sm) var(--space-m);border-radius:var(--radius-m);background:var(--fill);border:1.5px dashed var(--primary);font-size:var(--fs-s);line-height:1.4}
+.edit-bar span{flex:1}
+.edit-mark{display:none;position:absolute;top:var(--space-xs);right:var(--space-xs);z-index:2;width:34px;height:34px;border-radius:50%;align-items:center;justify-content:center;
+  background:var(--primary-gradient);color:var(--on-primary);box-shadow:var(--shadow-s);pointer-events:none}
+.edit-mark .icon{width:18px;height:18px}
+.editing .edit-mark{display:flex}
+.editing .ptile .pbtn{outline:2px dashed var(--primary);outline-offset:-5px}
+.editing .pbtn .badge{display:none!important}
+.form .field{display:flex;flex-direction:column;gap:var(--space-xs);margin-bottom:var(--space-ml)}
+.form input,.form textarea{width:100%;height:auto;padding:var(--space-m) var(--space-ml);border-radius:var(--radius-s);border:1px solid var(--border);background:var(--fill);color:var(--text);
+  font-family:inherit;font-size:var(--fs-l);font-weight:600;transition:border-color var(--dur-base),box-shadow var(--dur-base)}
+.form textarea{min-height:88px;resize:vertical;line-height:1.45;font-size:var(--fs-base);font-weight:500}
+.form input:focus,.form textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--ring)}
+.form .invalid{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-bg)}
+.form .hint{margin:var(--space-3xs) var(--space-3xs) 0}
+
+/* ---------- 7. Bestellung ---------- */
+.order-list{flex:1;min-height:70px;overflow:auto;overscroll-behavior:contain;margin:0 calc(var(--space-2xs) * -1);padding:0 var(--space-2xs)}
+.empty{height:100%;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-m);color:var(--muted);text-align:center;font-size:calc(15px * var(--order-scale));line-height:1.4}
+.empty .icon{width:48px;height:48px;stroke-width:1.3;opacity:.45}
+.order-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:var(--space-m);align-items:center;padding:var(--space-m) var(--space-xs);border-bottom:1px solid var(--border)}
+.order-item:last-child{border-bottom:0}
+.order-item.new{animation:rowIn var(--dur-base) var(--ease)}
+.order-item.bump .order-item-sum,.order-item.bump .qty{animation:bumpQty var(--dur-slow) var(--spring)}
+@keyframes rowIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes bumpQty{0%{transform:scale(1.22)}100%{transform:scale(1)}}
+.order-item-name{font-weight:700;font-size:calc(16.5px * var(--order-scale));line-height:1.25;overflow-wrap:anywhere}
+.order-item-unit{display:block;font-size:calc(13px * var(--order-scale));font-weight:500;color:var(--muted);margin-top:var(--space-3xs);font-variant-numeric:tabular-nums}
+.order-item-sum{display:inline-block;font-weight:800;font-size:calc(17px * var(--order-scale));text-align:right;white-space:nowrap;min-width:78px;font-variant-numeric:tabular-nums}
+.stepper{display:inline-flex;align-items:center;gap:var(--space-3xs);background:var(--fill);border:1px solid var(--border);border-radius:var(--radius-full);padding:var(--space-3xs)}
+.stepper button{width:var(--tap-min);height:var(--tap-min);border-radius:var(--radius-full);display:flex;align-items:center;justify-content:center;color:var(--text);transition:transform var(--dur-fast) var(--ease),background-color var(--dur-fast)}
+.stepper button:active{transform:scale(.85);background:var(--fill-active)}
+.stepper .plus,.stepper .plus:active{background:var(--primary-gradient);color:var(--on-primary);box-shadow:var(--shadow-s)}
+.stepper .minus.is-del{color:var(--danger)}
+.qty{display:inline-block;min-width:36px;text-align:center;font-weight:800;font-size:calc(18px * var(--order-scale));font-variant-numeric:tabular-nums}
+
+/* ---------- 8. Bezahlen ---------- */
+.summary{display:flex;flex-direction:column;gap:var(--space-m);padding-top:var(--space-ml);border-top:1px solid var(--border)}
+.total-row{display:flex;justify-content:space-between;align-items:baseline;gap:var(--space-sm)}
+.total-row .overline{font-size:var(--fs-xs)}
+#total{display:inline-block;font-weight:900;font-size:calc(42px * var(--order-scale));letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums;transform-origin:right center}
+#total.tick{animation:tickSum var(--dur-slow) var(--ease)}
+@keyframes tickSum{0%{transform:scale(1.08)}100%{transform:scale(1)}}
+.money{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-xs)}
+.money-btn{min-height:46px;border-radius:var(--radius-s);border:1px solid var(--border);background:var(--fill);color:var(--text);font-weight:700;font-size:calc(15px * var(--order-scale));font-variant-numeric:tabular-nums;padding:var(--space-2xs);transition:transform var(--dur-fast) var(--ease),background-color var(--dur-fast),border-color var(--dur-fast)}
+.money-btn:active{transform:scale(.93);background:var(--fill-active)}
+@media (hover:hover){.money-btn:hover{background:var(--fill-hover);border-color:var(--border-strong)}}
+.money-btn.exact{background:transparent;border:1.5px solid var(--primary-text);color:var(--primary-text);font-weight:800}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-sm)}
+.card{position:relative;display:flex;flex-direction:column;gap:var(--space-3xs);padding:var(--space-sm) var(--space-ml) var(--space-sm);border-radius:var(--radius-m);background:var(--fill);border:1px solid var(--border);min-width:0;
+  transition:background-color var(--dur-base) var(--ease),box-shadow var(--dur-base) var(--ease),border-color var(--dur-base)}
+.card.given{cursor:text}
+.card.given:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px var(--ring)}
+.card.given.invalid{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-bg)}
+.given-row{display:flex;align-items:center;gap:var(--space-xs)}
+#given{flex:1;width:100%;min-width:0;border:0;background:transparent;padding:0;font-size:calc(26px * var(--order-scale));font-weight:800;letter-spacing:-.015em;font-variant-numeric:tabular-nums;line-height:1.2}
+#given:focus-visible{outline:none}
+#given::placeholder{color:var(--muted);font-weight:500;opacity:1}
+.input-clear{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--fill-hover);color:var(--muted);flex-shrink:0;transition:transform var(--dur-fast) var(--ease)}
+.input-clear:active{transform:scale(.86)}
+.input-clear .icon{width:14px;height:14px;stroke-width:2.8}
+.input-clear[hidden]{display:none}
+#change{font-size:calc(26px * var(--order-scale));font-weight:800;letter-spacing:-.015em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+.card.change[data-state="neutral"] #change{color:var(--muted);font-weight:600}
+.card.change[data-state="ok"]{background:var(--success-bg);border-color:var(--success-bg)}
+.card.change[data-state="ok"] #change{color:var(--success)}
+.card.change[data-state="deficit"]{background:var(--danger-bg);border-color:var(--danger-bg)}
+.card.change[data-state="deficit"] #change{color:var(--danger);font-size:calc(21px * var(--order-scale))}
+.actions{display:grid;grid-template-columns:1fr auto;gap:var(--space-s)}
+.btn-pay{min-height:62px;font-size:var(--fs-l);gap:var(--space-xs);font-weight:800;border-radius:var(--radius-m);letter-spacing:-.015em;padding:var(--space-sm) var(--space-sm);white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.btn-pay .icon{width:26px;height:26px;stroke-width:2.8}
+.btn-pay-alt{min-height:62px;border-radius:var(--radius-m);padding:0 var(--space-m);gap:var(--space-2xs);white-space:nowrap}
+
+/* ---------- 9. Dialoge ---------- */
+dialog{border:1px solid var(--panel-border);border-radius:var(--radius-l);padding:0;background:var(--modal-bg);color:var(--text);width:94vw;max-width:760px;max-height:90dvh;box-shadow:var(--shadow-overlay)}
+@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){dialog{-webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%)}}
+dialog[open]{animation:sheetIn var(--dur-slow) var(--ease)}
+dialog::backdrop{background:var(--scrim);animation:fadeIn var(--dur-base) ease}
+@keyframes sheetIn{from{opacity:0;transform:translateY(24px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+#dlgAsk{max-width:480px}
+.dialog{display:flex;flex-direction:column;max-height:90dvh}
+.dialog-head{display:flex;justify-content:space-between;align-items:center;gap:var(--space-s);padding:var(--space-xl) var(--space-2xl) var(--space-ml);border-bottom:1px solid var(--border)}
+.dialog-head strong{font-size:var(--fs-xl);font-weight:800;letter-spacing:-.02em}
+.dialog-body{padding:var(--space-l) var(--space-2xl) var(--space-xl);overflow:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
+.dialog-foot{display:flex;gap:var(--space-sm);padding:var(--space-ml) var(--space-2xl) var(--space-xl);border-top:1px solid var(--border);flex-wrap:wrap}
+.dialog-foot .btn{flex:1 1 160px;min-height:52px}
+#askText{white-space:pre-line;line-height:1.55;margin:0 0 var(--space-ml);font-size:var(--fs-base)}
+#askInput{width:100%;padding:var(--space-ml) var(--space-l);border-radius:var(--radius-s);border:1px solid var(--border);background:var(--fill);font-size:var(--fs-xl);font-weight:800;transition:border-color var(--dur-base),box-shadow var(--dur-base)}
+#askInput:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--ring)}
+#askInput.invalid{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-bg)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:var(--space-sm);margin-bottom:var(--space-xl)}
+.stat{background:var(--fill);border:1px solid var(--border);border-radius:var(--radius-m);padding:var(--space-ml) var(--space-l)}
+.stat .stat-value{font-size:var(--fs-2xl);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat .overline{margin-top:var(--space-3xs)}
+table.data-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;margin-bottom:var(--space-xl);font-size:var(--fs-m)}
+.data-table th{font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.data-table th,.data-table td{padding:var(--space-sm) var(--space-xs);border-bottom:1px solid var(--border);text-align:left}
+.data-table .num{text-align:right}
+.bon{background:var(--fill);border:1px solid var(--border);border-radius:var(--radius-m);padding:var(--space-ml) var(--space-l);margin-bottom:var(--space-sm)}
+.bon.is-storno{border-left:4px solid var(--danger)}
+.bon.is-voided{background:transparent;border-style:dashed}
+.bon.is-voided .line-row>span:last-child{text-decoration:line-through;text-decoration-thickness:2px}
+.bon-head{display:flex;justify-content:space-between;gap:var(--space-s);align-items:center;flex-wrap:wrap;margin-bottom:var(--space-sm)}
+.line-row{display:flex;justify-content:space-between;gap:var(--space-s);font-size:var(--fs-m);font-variant-numeric:tabular-nums;line-height:1.5}
+.line-row.is-sum{font-weight:800;margin-top:var(--space-s);padding-top:var(--space-s);border-top:1px solid var(--border)}
+.tag{font-size:var(--fs-xs);padding:var(--space-3xs) var(--space-s);border-radius:var(--radius-full);background:var(--danger-bg);color:var(--danger);font-weight:700;margin-left:var(--space-xs)}
+.muted{color:var(--muted)}
+h3{margin:var(--space-2xl) 0 var(--space-sm) var(--space-2xs);font-size:var(--fs-xs);font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+h3:first-child{margin-top:0}
+.menu-grid{display:flex;flex-direction:column;background:var(--fill);border:1px solid var(--border);border-radius:var(--radius-m);overflow:hidden}
+.menu-grid .btn{justify-content:flex-start;text-align:left;border-radius:0;border:0;background:transparent;min-height:54px;padding:var(--space-ml) var(--space-l);font-weight:600;box-shadow:none}
+.menu-grid .btn+.btn{border-top:1px solid var(--border)}
+.menu-grid .btn:active:not(:disabled){transform:none;background:var(--fill-active)}
+.menu-grid .btn-primary{color:var(--primary-text);font-weight:700}
+.menu-grid .btn-danger{color:var(--danger);font-weight:700}
+@media (hover:hover){.menu-grid .btn:hover:not(:disabled){background:var(--fill-hover);filter:none}}
+.theme-list{display:flex;gap:var(--space-sm);flex-wrap:wrap;margin-bottom:var(--space-sm)}
+.theme-group{font-size:var(--fs-s);color:var(--muted);margin:var(--space-m) 0 var(--space-xs) var(--space-2xs);font-weight:600}
+.theme-btn{display:flex;align-items:center;gap:var(--space-sm);border:1px solid var(--border);border-radius:var(--radius-s);padding:var(--space-s) var(--space-l) var(--space-s) var(--space-s);background:var(--fill);font-size:var(--fs-s);font-weight:700;transition:transform var(--dur-fast) var(--ease)}
+.theme-btn:active{transform:scale(.95)}
+.theme-btn i{display:block;width:32px;height:32px;border-radius:50%;box-shadow:inset 0 0 0 1px var(--border-strong),var(--shadow-s);background:linear-gradient(135deg,var(--swatch-a) 50%,var(--swatch-b) 50%)}
+.theme-btn[aria-pressed="true"]{border-color:var(--primary);box-shadow:0 0 0 3px var(--ring)}
+textarea{width:100%;height:42dvh;background:var(--console-bg);color:var(--console-fg);border:1px solid var(--border);border-radius:var(--radius-s);padding:var(--space-ml);font-family:var(--font-mono);font-size:var(--fs-xs);line-height:1.45}
+.hint{font-size:var(--fs-s);color:var(--muted);line-height:1.55;margin:var(--space-m) var(--space-2xs)}
+.notice-warn{background:var(--danger-bg);color:var(--text);border:1px solid var(--danger-bg);padding:var(--space-ml) var(--space-l);border-radius:var(--radius-m);font-size:var(--fs-s);margin:0 0 var(--space-l);line-height:1.5}
+.row-inline{display:flex;gap:var(--space-sm);align-items:center;flex-wrap:wrap;margin-bottom:var(--space-l)}
+select{padding:var(--space-s) var(--space-ml);border-radius:var(--radius-xs);border:1px solid var(--border);background:var(--fill);min-height:var(--tap-min);font-weight:700}
+
+/* ---------- 10. HUD ---------- */
+#toast{position:fixed;inset:auto;left:50%;top:50%;margin:0;transform:translate(-50%,-50%) scale(.92);width:min(420px,88vw);padding:var(--space-3xl) var(--space-2xl) var(--space-2xl);
+  border:1px solid var(--panel-border);border-radius:var(--radius-l);background:var(--hud-bg);color:var(--hud-fg);text-align:center;box-shadow:var(--shadow-overlay);
+  opacity:0;visibility:hidden;transition:opacity var(--dur-base) var(--ease),transform var(--dur-base) var(--ease),visibility var(--dur-base);pointer-events:none;z-index:100;overflow:visible}
+@supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){#toast{-webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%)}}
+#toast.show{opacity:1;visibility:visible;transform:translate(-50%,-50%) scale(1);animation:hudPop var(--dur-slow) var(--spring)}
+@keyframes hudPop{from{opacity:0;transform:translate(-50%,-50%) scale(.85)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+#toast.err .toast-title{color:var(--danger)}
+#toast .toast-icon{font-size:var(--fs-4xl);line-height:1.1}
+#toast .toast-title{font-size:var(--fs-fluid-toast-title);font-weight:800;margin-top:var(--space-m);letter-spacing:-.02em}
+#toast .toast-amount{font-size:var(--fs-fluid-toast-amount);font-weight:900;letter-spacing:-.03em;color:var(--success);margin-top:var(--space-2xs);font-variant-numeric:tabular-nums}
+#toast .toast-detail{font-size:var(--fs-fluid-toast-detail);font-weight:500;margin-top:var(--space-s);color:var(--muted)}
+.check{display:block;width:76px;height:76px;margin:0 auto}
+.check circle{fill:none;stroke:var(--success);stroke-width:3;opacity:.25}
+.check path{fill:none;stroke:var(--success);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:44;stroke-dashoffset:44;animation:drawCheck var(--dur-slow) var(--dur-instant) var(--ease) forwards}
+@keyframes drawCheck{to{stroke-dashoffset:0}}
+
+/* ---------- 10b. Tippflächen ----------
+   Kleine Bedienelemente behalten ihre Optik, bekommen aber eine unsichtbare Tippfläche von mind. 44 pt.
+   min(0px, …) sorgt dafür, dass große Knöpfe nicht unnötig wachsen. */
+.btn-sm,.segmented button,button.chip,.input-clear{position:relative}
+.btn-sm::before,.segmented button::before,button.chip::after,.input-clear::before,.info-btn::before{
+  content:"";position:absolute;inset:min(0px,calc((var(--tap-min) - 100%) / -2))}
+/* Breitenregler: 44 pt breite Greiffläche, per Tastatur bedienbar */
+#resizer{position:relative}
+#resizer::after{content:"";position:absolute;inset:0 calc((var(--tap-min) - 100%) / -2)}
+#resizer:focus-visible{outline:none}
+#resizer:focus-visible::before{opacity:.95;height:110px;background:var(--primary);box-shadow:0 0 0 3px var(--ring)}
+
+/* ---------- 10c. Hilfsklassen (statt Inline-Styles) ---------- */
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+.text-danger,.menu-grid .text-danger{color:var(--danger)}
+.hint.is-error{color:var(--danger);font-weight:700}
+.hint.hint-center{text-align:center;margin:0}
+.bon-title{font-size:15pt;font-weight:700}.bon-title-report{font-size:14pt}.bon-gap{margin-top:var(--space-2xs)}
+/* Rückgeld des letzten Bons bleibt sichtbar, bis die nächste Bestellung beginnt */
+.card.change[data-last]{box-shadow:0 0 0 3px var(--ring)}
+
+/* ---------- 10d. Bestell-Zusammenfassung (Toast + „Letzter Bon“) ---------- */
+#toast.is-summary{pointer-events:auto;cursor:pointer;max-height:88dvh;overflow:auto}
+.sum-items{list-style:none;margin:var(--space-m) 0 0;padding:0;text-align:left;font-size:var(--fs-base);line-height:1.4}
+#toast .sum-items{max-height:32dvh;overflow:auto}
+.sum-items li{padding:var(--space-xs) 0;border-bottom:1px solid var(--border)}
+.sum-qty{display:inline-block;min-width:2.6em;font-weight:800;font-variant-numeric:tabular-nums}
+.sum-rows{margin-top:var(--space-s);text-align:left}
+.sum-rows .line-row.is-sum{font-size:var(--fs-l)}
+.text-success{color:var(--success)}
+.last-meta{margin:0 0 var(--space-xs)}
+#dlgLast{max-width:480px}
+#btnLastBon{white-space:nowrap}
+#rescueInfo{margin-bottom:var(--space-m)}
+
+/* ---------- 11. Druck ---------- */
+#printArea{display:none}
+.bon-center{text-align:center}.bon-row{display:flex;justify-content:space-between;gap:var(--space-s)}
+.bon-sep{border-top:1px dashed #000;margin:var(--space-xs) 0}.bon-total{font-weight:700;font-size:14pt}
+@media print{
+  @page{margin:6mm}
+  html,body{background:#fff!important;color:#000!important;overflow:visible!important;height:auto}
+  body::before{display:none!important}
+  body>*:not(#printArea){display:none!important}
+  #printArea{display:block;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11pt;color:#000;max-width:80mm;margin:0 auto}
+}
+
+/* ---------- 12. Responsive & Zugänglichkeit ---------- */
+@media (max-width:900px){.btn .lbl-opt{display:none}.clock{display:none}}
+@media (max-width:700px){
+  body{overflow:auto}
+  .app{height:auto;min-height:100dvh}
+  main{grid-template-columns:1fr;gap:14px}
+  #resizer{display:none}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(135px,1fr));grid-auto-rows:120px;overflow:visible}
+  .order-list{max-height:42dvh}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .check path{stroke-dashoffset:0}
+}
+</style>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1zM8 4v5h7V4M8 20v-6h8v6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-lifebuoy" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M5.6 5.6l4 4M14.4 14.4l4 4M18.4 5.6l-4 4M9.6 14.4l-4 4"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M3 3l18 18M8.5 16.5a5 5 0 0 1 7 0M5 13a10 10 0 0 1 4.2-2.6M14.8 10.4A10 10 0 0 1 19 13M2 9.5a14.5 14.5 0 0 1 3.6-2.3M10.6 5.6A14.5 14.5 0 0 1 22 9.5M12 20h.01"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><path d="M3 5h18v4H3zM5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6h.01"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16zM13.5 6.5l4 4"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2"/></symbol>
+</svg>
+<div class="app">
+  <header>
+    <div>
+      <h1 id="title">Pottschatz Kasse</h1>
+      <div class="chips" aria-live="polite">
+        <span class="chip" id="chipNet">…</span>
+        <button type="button" class="chip" id="chipOffline">…</button>
+        <span class="chip" id="chipSave">…</span>
+        <span class="chip" id="chipExport">…</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <time class="clock" id="clock"></time>
+      <button type="button" class="btn" id="btnLog"><svg class="icon"><use href="#i-list"/></svg><span>Erfassungen</span></button>
+      <button type="button" class="btn" id="btnMenu" aria-label="Menü"><svg class="icon"><use href="#i-sliders"/></svg><span class="lbl-opt">Menü</span></button>
+    </div>
+  </header>
+
+  <main id="kasse">
+    <section class="panel" aria-label="Produkte">
+      <div class="panel-head">
+        <h2>Produkte</h2>
+        <div class="segmented" role="group" aria-label="Schriftgröße Produkte">
+          <button type="button" data-font="prod" data-step="-1" aria-label="Produktschrift kleiner">A−</button>
+          <button type="button" data-font="prod" data-step="1" aria-label="Produktschrift größer">A+</button>
+        </div>
+      </div>
+      <div class="edit-bar" id="editBar" hidden><svg class="icon"><use href="#i-pencil"/></svg><span><b>Bearbeitungsmodus</b> – Produkt antippen, um Name, Preis und Infos zu ändern.</span><button type="button" class="btn btn-sm btn-primary" id="btnEditDone">Fertig</button></div>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <div id="resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="orderPanel" aria-label="Breite der Kasse ändern (Pfeiltasten; Doppeltippen oder Pos1 = Standard)"></div>
+
+    <aside class="panel" id="orderPanel" aria-label="Bestellung">
+      <div class="panel-head">
+        <h2>Bestellung<span class="count" id="orderCount"></span></h2>
+        <div class="controls">
+          <button type="button" class="btn btn-sm" id="btnLastBon" aria-haspopup="dialog" aria-label="Letzten Bon anzeigen" disabled><svg class="icon"><use href="#i-receipt"/></svg><span class="lbl-opt">Letzter Bon</span></button>
+          <div class="segmented" role="group" aria-label="Schriftgröße Bestellung">
+            <button type="button" data-font="order" data-step="-1" aria-label="Bestellschrift kleiner">A−</button>
+            <button type="button" data-font="order" data-step="1" aria-label="Bestellschrift größer">A+</button>
+          </div>
+          <button type="button" class="btn btn-sm btn-soft-danger" id="btnClear"><svg class="icon"><use href="#i-trash"/></svg>Leeren</button>
+        </div>
+      </div>
+      <div class="order-list" id="orderList" role="list"></div>
+      <div class="summary">
+        <div class="total-row" aria-live="polite" aria-atomic="true"><span class="overline">Gesamt</span><span id="total">0,00 €</span></div>
+        <div class="money" id="money">
+          <button type="button" class="money-btn" data-cents="50">0,50 €</button>
+          <button type="button" class="money-btn" data-cents="100">1 €</button>
+          <button type="button" class="money-btn" data-cents="200">2 €</button>
+          <button type="button" class="money-btn" data-cents="500">5 €</button>
+          <button type="button" class="money-btn" data-cents="1000">10 €</button>
+          <button type="button" class="money-btn" data-cents="2000">20 €</button>
+          <button type="button" class="money-btn" data-cents="5000">50 €</button>
+          <button type="button" class="money-btn exact" data-exact="1">Passend</button>
+        </div>
+        <div class="cards">
+          <div class="card given" id="givenCard">
+            <label class="overline" for="given">Gegeben</label>
+            <div class="given-row">
+              <input id="given" type="text" inputmode="decimal" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="passend">
+              <button type="button" class="input-clear" id="btnGivenClear" aria-label="Gegeben zurücksetzen" hidden><svg class="icon"><use href="#i-x"/></svg></button>
+            </div>
+          </div>
+          <div class="card change" id="changeCard" data-state="neutral">
+            <span class="overline" id="changeLabel">Rückgeld</span>
+            <div id="change" aria-live="polite">–</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-primary btn-pay" id="btnPay" disabled><svg class="icon"><use href="#i-check"/></svg>Zahlung erfassen</button>
+          <button type="button" class="btn btn-pay-alt" id="btnPayPrint" disabled aria-label="Zahlung erfassen und Bon drucken"><svg class="icon"><use href="#i-receipt"/></svg>+ Bon</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<!-- Erfassungen / Tagesabschluss -->
+<dialog id="dlgLog" aria-labelledby="logTitle">
+  <div class="dialog">
+    <div class="dialog-head"><strong id="logTitle">Erfassungen &amp; Tagesabschluss</strong><button type="button" class="btn btn-sm" data-close>Zurück zur Kasse</button></div>
+    <div class="dialog-body">
+      <div class="row-inline">
+        <div class="segmented segmented-lg" role="group" aria-label="Bereich" id="logSrc">
+          <button type="button" data-src="log" aria-pressed="true">Aktuell<span></span></button>
+          <button type="button" data-src="archive" aria-pressed="false">Archiv<span></span></button>
+          <button type="button" data-src="all" aria-pressed="false">Alle<span></span></button>
+        </div>
+        <label for="logDay" class="muted">Tag:</label><select id="logDay"></select>
+      </div>
+      <div id="logInfo"></div>
+      <div id="logStats"></div>
+      <div id="logList"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-primary" id="btnCsv2"><svg class="icon"><use href="#i-upload"/></svg><span>CSV exportieren</span></button>
+      <button type="button" class="btn" id="btnPrintDay"><svg class="icon"><use href="#i-print"/></svg>Tagesbericht drucken</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Menü -->
+<dialog id="dlgMenu" aria-labelledby="menuTitle">
+  <div class="dialog">
+    <div class="dialog-head"><strong id="menuTitle">Menü</strong><button type="button" class="btn btn-sm" data-close>Schließen</button></div>
+    <div class="dialog-body">
+      <h3>Datensicherung</h3>
+      <div class="menu-grid">
+        <button type="button" class="btn btn-primary" id="btnCsv"><svg class="icon"><use href="#i-upload"/></svg>CSV exportieren – alle Buchungen inkl. Archiv</button>
+        <button type="button" class="btn" id="btnShowArchive"><svg class="icon"><use href="#i-archive"/></svg><span>Archiv ansehen &amp; exportieren</span></button>
+        <button type="button" class="btn" id="btnBackup"><svg class="icon"><use href="#i-save"/></svg>Backup (JSON) sichern</button>
+        <button type="button" class="btn" id="btnImport"><svg class="icon"><use href="#i-download"/></svg>Backup importieren</button>
+        <button type="button" class="btn text-danger" id="btnRescue"><svg class="icon"><use href="#i-lifebuoy"/></svg>Daten retten</button>
+      </div>
+      <p class="hint" id="exportInfo"></p>
+      <h3>Produkte</h3>
+      <div class="menu-grid">
+        <button type="button" class="btn" id="btnEditProducts"><svg class="icon"><use href="#i-pencil"/></svg><span>Produkte &amp; Preise bearbeiten</span></button>
+      </div>
+      <p class="hint" id="prodInfo"></p>
+      <h3>Gerät</h3>
+      <div class="menu-grid">
+        <button type="button" class="btn" id="btnWake" aria-pressed="false"><svg class="icon"><use href="#i-sun"/></svg><span>Bildschirm wach halten: aus</span></button>
+        <button type="button" class="btn" id="btnReload"><svg class="icon"><use href="#i-refresh"/></svg>Neu laden</button>
+        <button type="button" class="btn" id="btnOfflineInfo"><svg class="icon"><use href="#i-offline"/></svg>Offline-Betrieb: Anleitung</button>
+      </div>
+      <h3>Farbschema</h3>
+      <div id="themes"></div>
+      <h3>Gefahrenbereich</h3>
+      <div class="menu-grid">
+        <button type="button" class="btn text-danger" id="btnArchive"><svg class="icon"><use href="#i-archive"/></svg>Archivieren (Bon-Nr. läuft weiter)</button>
+        <button type="button" class="btn btn-danger" id="btnReset"><svg class="icon"><use href="#i-alert"/></svg>Komplett zurücksetzen (Bon-Nr. 1)</button>
+      </div>
+      <p class="hint"><b>Archivieren</b>: Bons verschwinden aus der Tagesansicht, bleiben aber intern (Backup / „Daten retten“) erhalten, Bon-Nummern laufen weiter.<br><b>Komplett zurücksetzen</b>: löscht ALLE Buchungen, das Archiv, die Rettungsdaten und die alten V9.7-Daten endgültig. Die nächste Bon-Nummer ist wieder 1. Farbschema und Schriftgrößen bleiben erhalten.</p>
+      <p class="hint" id="versionInfo"></p>
+    </div>
+  </div>
+</dialog>
+
+<!-- Produkt- & Allergen-Info -->
+<dialog id="dlgInfo" aria-labelledby="infoTitle">
+  <div class="dialog">
+    <div class="dialog-head"><strong id="infoTitle"></strong></div>
+    <div class="dialog-body" id="infoBody"></div>
+    <div class="dialog-foot"><button type="button" class="btn" id="btnInfoEdit"><svg class="icon"><use href="#i-pencil"/></svg>Bearbeiten</button><button type="button" class="btn btn-primary" data-close>Schließen</button></div>
+  </div>
+</dialog>
+
+<!-- Produkt bearbeiten -->
+<dialog id="dlgEdit" aria-labelledby="editTitle">
+  <div class="dialog">
+    <div class="dialog-head"><strong id="editTitle">Produkt bearbeiten</strong></div>
+    <div class="dialog-body form">
+      <label class="field"><span class="overline">Name</span><input id="edName" type="text" maxlength="40" autocomplete="off" autocorrect="off"></label>
+      <label class="field"><span class="overline">Preis (€)</span><input id="edPrice" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 6,50"><span class="hint" id="edPriceHint"></span></label>
+      <label class="field"><span class="overline">Beschreibung (Info-Knopf)</span><textarea id="edDesc" rows="3" maxlength="400"></textarea></label>
+      <label class="field"><span class="overline">Allergene &amp; Hinweise</span><textarea id="edAll" rows="3" maxlength="400"></textarea></label>
+      <p class="hint is-error" id="edErr" role="alert" hidden></p>
+      <p class="hint">Gilt sofort für neue Bons auf diesem iPad. Bereits erfasste Bons behalten ihren Preis. Die Änderungen sind im Backup enthalten.</p>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn" id="edReset">Standard wiederherstellen</button>
+      <button type="button" class="btn" data-close>Abbrechen</button>
+      <button type="button" class="btn btn-primary" id="edSave"><svg class="icon"><use href="#i-check"/></svg>Speichern</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Letzter Bon -->
+<dialog id="dlgLast" aria-labelledby="lastTitle">
+  <div class="dialog">
+    <div class="dialog-head"><strong id="lastTitle">Letzter Bon</strong></div>
+    <div class="dialog-body" id="lastBody"></div>
+    <div class="dialog-foot"><button type="button" class="btn btn-primary" data-close>Schließen</button></div>
+  </div>
+</dialog>
+
+<!-- Datenrettung -->
+<dialog id="dlgRescue" aria-labelledby="rescueTitle">
+  <div class="dialog">
+    <div class="dialog-head"><strong id="rescueTitle">Notfall-Datenrettung</strong><button type="button" class="btn btn-sm" data-close>Schließen</button></div>
+    <div class="dialog-body">
+      <div class="notice" id="rescueInfo" role="status"></div>
+      <p class="hint">Alle Buchungen (aktuelle Bons + Archiv) und auf diesem iPad geänderte Produkte als Text. Wenn Export nicht funktioniert: „Kopieren“ und z. B. in eine Notiz oder Mail einfügen. Dieser Text kann später über „Backup importieren“ (als .json-Datei) wieder eingelesen werden.</p>
+      <textarea id="rescueText" readonly></textarea>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" class="btn btn-primary" id="btnCopy"><svg class="icon"><use href="#i-copy"/></svg>Kopieren</button>
+      <button type="button" class="btn" id="btnRescueSave"><svg class="icon"><use href="#i-save"/></svg>Als Datei sichern</button>
+      <button type="button" class="btn btn-danger" id="btnRescueWipe"><svg class="icon"><use href="#i-trash"/></svg>Alle Daten löschen</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Rückfrage (ersetzt alert/confirm) -->
+<dialog id="dlgAsk" aria-labelledby="askTitle">
+  <div class="dialog">
+    <div class="dialog-head"><strong id="askTitle"></strong></div>
+    <div class="dialog-body"><p id="askText"></p><input id="askInput" type="text" autocomplete="off" autocapitalize="characters" hidden></div>
+    <div class="dialog-foot"><button type="button" class="btn" id="askCancel">Abbrechen</button><button type="button" class="btn btn-primary" id="askOk">OK</button></div>
+  </div>
+</dialog>
+
+<div id="toast" popover="manual" role="status" aria-atomic="true"></div>
+<input type="file" id="fileImport" accept=".json,application/json,text/plain" hidden>
+<div id="printArea"></div>
+
+<script>
+'use strict';
+/* =========================================================
+   1. KONFIGURATION  (Preise in CENT!)
+   ========================================================= */
+const APP_VERSION = '11.6.0';
+const CONFIG = {
+  title: 'Weihnachtsmarkt 2026 — POTTSCHATZ',
+  shopName: 'POTTSCHATZ',
+  exportReminder: 25            // ab so vielen nicht exportierten Bons wird gewarnt
+};
+/* desc/allergens: Texte für den Info-Knopf (i) – bitte selbst prüfen und pflegen.
+   Farben passend zum Produkt. d = [Hintergrund, Schrift] für dunkle Themes, l = für helle Themes.
+   Alle Paare erfüllen WCAG-AA-Kontrast (≥ 4,5 : 1). */
+const PRODUCTS = [
+  {id:'p1', emoji:'🍛', name:'Chili con Carne',   price:650, d:['#a3311b','#ffffff'], l:['#f7c9b9','#5c1607'],
+    desc:'Würziger Eintopf mit Rindfleisch, Bohnen, Tomaten und Paprika.', allergens:'Toastbrot: enthält Gluten (Weizen). Chili con Carne selbst: keine der 14 Hauptallergene.'}, // Tomate/Bohnen-Rot
+  {id:'p2', emoji:'🍲', name:'Käse Lauch Suppe',  price:650, d:['#c8b84a','#1c1a05'], l:['#f3eab0','#3d3a0a'],
+    desc:'Cremige Suppe mit frischem Lauch, Hackfleisch und geschmolzenem Käse.', allergens:'Enthält Milch (Schmelzkäse) und Sellerie (Gemüsebrühe). Kann Spuren von Gluten, Ei, Soja und Senf enthalten. Mit Geschmacksverstärker, mit Phosphat.'}, // Käse-Gelb, Lauch-Grünstich
+  {id:'p3', emoji:'🌯', name:'Cheeköfte Wrap',    price:500, d:['#3f7a2e','#ffffff'], l:['#cfe8bf','#1f3d14'],
+    desc:'Vegetarischer Wrap mit würzigen Bulgur-Bällchen, frischem Salat und Kräutersoße.', allergens:'Enthält Gluten (Weizen im Wrap und im Bulgur). Konserviert, mit Phosphat.'}, // Salat-Grün
+  {id:'p4', emoji:'🍟', name:'Steakhouse Pommes', price:350, d:['#f2c12e','#1f1600'], l:['#ffe27a','#3a2a00'],
+    desc:'Knusprige, grob geschnittene Steakhouse-Pommes mit Meersalz.', allergens:'Pommes selbst: keine der 14 Hauptallergene. Mit Mayo: enthält Ei und Senf, mit Antioxidationsmittel.'}, // Pommes-Gold
+  {id:'p5', emoji:'🥫', name:'Ketchup, Mayo,...', price:50,  d:['#f5f1e8','#a51d16'], l:['#ffffff','#a51d16'],
+    desc:'Portion Currysauce, Ketchup oder Mayonnaise.', allergens:'Soßen (Currysauce, Ketchup, Mayo): enthalten Ei und Senf (Mayo, Gewürzgurken), mit Antioxidationsmittel. Kann Spuren von Gluten (Weizen), Soja, Milch, Sellerie und Sesam enthalten. Ketchup pur: keine der 14 Hauptallergene.'}, // Mayo-Weiß, Ketchup-Rot
+  {id:'p6', emoji:'🍫', name:'Heiße Schokolade',  price:350, d:['#5a3820','#fff3e6'], l:['#dcc0a3','#3b2210'],
+    desc:'Vollmundiger, heißer Kakao.', allergens:'Enthält Milch und Soja (Lecithin im Kakaopulver).'}, // Kakao-Braun
+  {id:'p7', emoji:'🍹', name:'Bio Glühwein',      price:400, d:['#741232','#ffffff'], l:['#f2c4d0','#5a0e26'],
+    desc:'Aromatischer Bio-Glühwein mit traditionellen Gewürzen.', allergens:'Enthält Sulfite (geschwefelt) und Alkohol.'}, // Weinrot
+  {id:'p8', emoji:'💥', name:'Schuss Rum',        price:100, d:['#9a5b17','#ffffff'], l:['#f0d2a2','#4a2a05'],
+    desc:'Ein kräftiger Schuss Rum (40 % Vol.) zum Verfeinern.', allergens:'Enthält Alkohol.'}, // Rum-Bernstein
+  {id:'p9', emoji:'🌶', name:'Hot Pottschatz',    price:700, d:['#1f1f1f','#ff8a3d'], l:['#262626','#ff9a52'],
+    desc:'Die feurige Signature-Spezialität im Sturzglas (225 ml).', allergens:'Sehr scharf! Enthält Chili und Gewürze.'}, // Signature schwarz/feurig
+  {id:'p10',emoji:'🍭', name:'Sweet Pottschatz',  price:400, d:['#b8185a','#ffffff'], l:['#f9cde0','#6b0f38'],
+    desc:'Süße Leckerei im Sturzglas.', allergens:'Kann Spuren von Schalenfrüchten enthalten.'}  // Bonbon-Pink
+];
+const THEMES = [
+  {id:'gloss', mode:'dark',  name:'Pottschatz Gloss', sw:['#2a313a','#ffb703']},
+  {id:'nachtblau', mode:'dark',  name:'Nachtblau',        sw:['#1e293b','#38bdf8']},
+  {id:'tanne', mode:'dark',  name:'Tannengrün',       sw:['#143823','#4ade80']},
+  {id:'oled', mode:'dark',  name:'OLED Kontrast',    sw:['#000000','#ffe600']},
+  {id:'creme', mode:'light', name:'Creme Warm',       sw:['#fefcf8','#c2410c']},
+  {id:'eisblau', mode:'light', name:'Eisblau',          sw:['#f8fafc','#2563eb']},
+  {id:'schnee', mode:'light', name:'Schnee & Rot',     sw:['#ffffff','#dc2626']}
+];
+const PMAP = new Map(PRODUCTS.map(p => [p.id, p]));
+const K = {
+  log:'pottschatz_kasse_v10_log', archive:'pottschatz_kasse_v10_archive', counter:'pottschatz_kasse_v10_counter',
+  state:'pottschatz_kasse_v10_state', settings:'pottschatz_kasse_v10_settings', meta:'pottschatz_kasse_v10_meta',
+  oldLog:'pottschatz_kasse_log_v1', oldTheme:'pottschatz_kasse_theme_v1', products:'pottschatz_kasse_v10_products'
+};
+
+/* =========================================================
+   2. HELFER
+   ========================================================= */
+const $ = s => document.querySelector(s);
+const NF = new Intl.NumberFormat('de-DE', {minimumFractionDigits:2, maximumFractionDigits:2});
+const NF_PLAIN = new Intl.NumberFormat('de-DE', {minimumFractionDigits:2, maximumFractionDigits:2, useGrouping:false});
+const fix0 = c => (Object.is(c, -0) ? 0 : c);
+const eur = c => NF.format(fix0(c) / 100) + ' €';
+const num = c => NF_PLAIN.format(fix0(c) / 100);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const uid = () => { try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (e) {} return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10); };
+const maxNr = list => list.reduce((m, e) => Math.max(m, Number(e && e.nr) || 0), 0);
+
+/** "5,50" / "5.5" / "1.234,50" / "12 €" -> Cent. Leer -> null, ungültig -> NaN */
+function parseEuro(str) {
+  let s = String(str ?? '').trim().replace(/[€\s]/g, '');
+  if (!s) return null;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  if (!/^\d*\.?\d{0,2}$/.test(s) || s === '.') return NaN;
+  const v = Math.round(parseFloat(s) * 100);
+  return Number.isFinite(v) ? v : NaN;
+}
+
+const ls = {
+  get(k, fb = null) { try { const v = localStorage.getItem(k); return v == null ? fb : JSON.parse(v); } catch (e) { return fb; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { console.warn('localStorage', e); return false; } }
+};
+
+/* IndexedDB als zweiter, unabhängiger Speicher (mit Timeout gegen iOS-Hänger) */
+const idb = (() => {
+  let dbp = null;
+  const withTimeout = (p, ms, fb) => Promise.race([p, new Promise(r => setTimeout(() => r(fb), ms))]);
+  function open() {
+    if (dbp) return dbp;
+    dbp = withTimeout(new Promise(res => {
+      try {
+        const r = indexedDB.open('pottschatz_kasse', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => res(r.result);
+        r.onerror = r.onblocked = () => res(null);
+      } catch (e) { res(null); }
+    }), 4000, null);
+    return dbp;
+  }
+  async function get(k) {
+    const db = await open(); if (!db) return undefined;
+    return withTimeout(new Promise(res => {
+      try { const q = db.transaction('kv', 'readonly').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }
+      catch (e) { res(undefined); }
+    }), 4000, undefined);
+  }
+  async function set(k, v) {
+    const db = await open(); if (!db) return false;
+    return withTimeout(new Promise(res => {
+      try { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = () => res(true); tx.onerror = tx.onabort = () => res(false); }
+      catch (e) { res(false); }
+    }), 4000, false);
+  }
+  return { get, set };
+})();
+
+function mergeById(...lists) {
+  const m = new Map();
+  for (const l of lists) if (Array.isArray(l)) for (const e of l) if (e && e.id && !m.has(e.id)) m.set(e.id, e);
+  return [...m.values()].sort((a, b) => (a.nr - b.nr) || String(a.ts).localeCompare(String(b.ts)));
+}
+
+/* Alte Daten (Version 9.7) übernehmen – inkl. Reparatur von given/change = null */
+function deToIso(d, t) {
+  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(d || ''); if (!m) return '';
+  const [hh = 0, mi = 0, ss = 0] = String(t || '').split(':').map(Number);
+  const dt = new Date(+m[3], m[2] - 1, +m[1], hh || 0, mi || 0, ss || 0);
+  return isNaN(dt) ? '' : dt.toISOString();
+}
+/* Import alter Daten: NICHTS still reparieren – Auffälligkeiten werden als warnings am Bon vermerkt (Lessons Learned 2–4, 7) */
+const PLAUSI_MAX_RUECKGELD = 5000;          // Rückgeld > 50 € = mehr als der größte übliche Schein
+const WARN_LABEL = { zahlung_unbekannt:'Zahlung unbekannt', unterzahlung:'Unterzahlung', plausibilitaet:'Rückgeld > 50 €',
+                     menge_null_entfernt:'Menge 0 entfernt', produkt_unbekannt:'Produkt unbekannt', anderer_tag:'anderer Tag',
+                     summe_abweichend:'Summe korrigiert' };
+const normName = s => String(s || '').replace(/\s+/g, '').toLowerCase();    // „Ketchup, Mayo, ...“ = „Ketchup, Mayo,...“
+function migrateV1(e) {
+  if (!e || !Array.isArray(e.items)) return null;
+  const warnings = [];
+  const all = e.items.map(it => {
+    const n = normName(it.name), p = PRODUCTS.find(x => normName(`${x.emoji} ${x.name}`) === n || normName(x.name) === n);
+    if (!p) warnings.push('produkt_unbekannt');
+    return { pid:p ? p.id : null, emoji:p ? p.emoji : '', name:p ? p.name : String(it.name || ''), qty:Number(it.qty) || 0, price:Math.round((Number(it.price) || 0) * 100) };
+  });
+  const items = all.filter(i => Number.isInteger(i.qty) && i.qty >= 1);
+  if (items.length < all.length) warnings.push('menge_null_entfernt');
+  const total = items.reduce((s, i) => s + i.qty * i.price, 0);                  // Summe immer aus den Positionen
+  if (typeof e.total === 'number' && Math.round(e.total * 100) !== total) warnings.push('summe_abweichend');
+  const g = (typeof e.given === 'number' && isFinite(e.given)) ? Math.round(e.given * 100) : null;
+  let change = null;
+  if (g === null) warnings.push('zahlung_unbekannt');                            // NICHT mehr als „passend bar“ werten
+  else { change = g - total; if (change < 0) warnings.push('unterzahlung'); else if (change > PLAUSI_MAX_RUECKGELD) warnings.push('plausibilitaet'); }
+  return { id:`v1-${e.orderNr || 0}-${e.date || ''}-${e.time || ''}`, nr:Number(e.orderNr) || 0, ts:deToIso(e.date, e.time),
+           date:e.date || '', time:e.time || '', type:'sale', payment:g === null ? 'unbekannt' : 'bar', items, total, given:g, change,
+           exact:g !== null && change === 0, warnings:[...new Set(warnings)], src:'v9.7' };
+}
+/** Positionen mit Menge 0 entfernen (nur Verkauf) und am Bon vermerken – z. B. für ältere Backups */
+function bereinige(e) {
+  if (!e || e.type === 'storno' || !Array.isArray(e.items) || e.items.every(i => i && i.qty !== 0)) return e;
+  return { ...e, items:e.items.filter(i => i && i.qty !== 0), warnings:[...new Set([...(e.warnings || []), 'menge_null_entfernt'])] };
+}
+/** Bons, die nicht am Haupt-Verkaufstag der Datei liegen, markieren (Lesson 5: Nachbuchung oder Test?) */
+function markiereAndereTage(list) {
+  const n = new Map(); list.forEach(e => n.set(e.date, (n.get(e.date) || 0) + 1));
+  const tag = [...n].sort((a, b) => b[1] - a[1])[0]?.[0];
+  list.forEach(e => { if (e.date !== tag) e.warnings = [...new Set([...(e.warnings || []), 'anderer_tag'])]; });
+}
+/** Text für die Import-Rückfrage: Anzahl und Bon-Nummern je Auffälligkeit */
+function importBericht(list) {
+  const m = new Map();
+  for (const e of list) for (const w of e.warnings || []) { if (!m.has(w)) m.set(w, []); m.get(w).push(e.nr); }
+  if (!m.size) return '';
+  const nrs = a => a.length > 8 ? a.slice(0, 8).map(n => '#' + n).join(', ') + ' …' : a.map(n => '#' + n).join(', ');
+  return '\n\n⚠️ Auffälligkeiten (werden am Bon vermerkt):\n' + [...m].map(([w, a]) => `• ${WARN_LABEL[w] || w}: ${a.length} (${nrs(a)})`).join('\n');
+}
+/** gültig = Integer-Cent, Verkauf: Menge ≥ 1 / Storno: Menge ≤ −1, Summe = Σ Menge × Preis */
+const isValidEntry = e => !!e && typeof e.id === 'string' && Array.isArray(e.items) && e.items.length > 0 && Number.isInteger(e.total)
+  && e.items.every(i => i && Number.isInteger(i.qty) && Number.isInteger(i.price) && i.price >= 0 && (e.type === 'storno' ? i.qty <= -1 : i.qty >= 1))
+  && e.total === e.items.reduce((s, i) => s + i.qty * i.price, 0);
+
+/* =========================================================
+   3. SPEICHER (doppelt: localStorage + IndexedDB)
+   ========================================================= */
+const Store = {
+  ready:false, log:[], archive:[], counter:0, lsOk:true, idbOk:true, migrated:0,
+  async init() {
+    const [iLog, iArc, iCnt] = await Promise.all([idb.get(K.log), idb.get(K.archive), idb.get(K.counter)]);
+    this.log = mergeById(ls.get(K.log, []), iLog);
+    this.archive = mergeById(ls.get(K.archive, []), iArc);
+    const meta = getMeta();
+    if (!meta.migratedV1) {
+      const old = ls.get(K.oldLog, null);
+      if (Array.isArray(old) && old.length) {
+        const conv = old.map(migrateV1).filter(Boolean); markiereAndereTage(conv);
+        const known = new Set([...this.log, ...this.archive].map(e => e.id));
+        const fresh = conv.filter(e => !known.has(e.id));
+        this.log = mergeById(this.log, fresh); this.migrated = fresh.length;
+      }
+      meta.migratedV1 = true; setMeta(meta);     // alter Schlüssel bleibt als Reserve unangetastet
+    }
+    if (!meta.expMigrated) {   // alte Export-Markierung übernehmen – nur echte Exporte, nur „Aktuell“ (Archiv bewusst nicht)
+      if (meta.lastExportTs) this.log.forEach(e => { if (e.nr <= (meta.lastExportNr || 0) && !e.exp) e.exp = meta.lastExportTs; });
+      meta.expMigrated = true; setMeta(meta);
+    }
+    this.counter = Math.max(Number(ls.get(K.counter, 0)) || 0, Number(iCnt) || 0, maxNr(this.log), maxNr(this.archive));
+    resetTs = meta.resetTs || 0;
+    this.ready = true;
+    await this.flush();
+  },
+  nextNr() {
+    this.counter = Math.max(this.counter, Number(ls.get(K.counter, 0)) || 0) + 1;
+    ls.set(K.counter, this.counter); idb.set(K.counter, this.counter);
+    return this.counter;
+  },
+  append(entry) { this.log.push(entry); return this.flush(true); },
+  /** schreibt zuerst SYNCHRON in localStorage, danach asynchron in IndexedDB */
+  async flush(mergeOtherTabs = false) {
+    if (mergeOtherTabs) this.log = mergeById(this.log, ls.get(K.log, []));
+    this.lsOk = ls.set(K.log, this.log) && ls.set(K.archive, this.archive) && ls.set(K.counter, this.counter);
+    const a = await idb.set(K.log, this.log), b = await idb.set(K.archive, this.archive), c = await idb.set(K.counter, this.counter);
+    this.idbOk = a && b && c;
+    updateChips();
+    return this.lsOk || this.idbOk;
+  },
+  dump() { return { app:'pottschatz-kasse', version:APP_VERSION, exportedAt:new Date().toISOString(), counter:this.counter, products:PRODUCTS, productOverrides, log:this.log, archive:this.archive }; }
+};
+const getMeta = () => Object.assign({ lastExportNr:0, lastExportTs:0 }, ls.get(K.meta, {}) || {});
+const setMeta = m => ls.set(K.meta, m);
+/* Export-Status wird PRO BUCHUNG gespeichert (Feld exp = Zeitpunkt des ersten Exports).
+   Archivieren ändert daran nichts – archivierte Bons bleiben „nicht exportiert“, bis sie wirklich exportiert wurden. */
+const allEntries = () => mergeById(Store.log, Store.archive);
+const lastEntry = () => { const a = allEntries(); return a.length ? a[a.length - 1] : null; };   // höchste Bon-Nummer
+const unexported = (list = allEntries()) => list.filter(e => !e.exp).length;
+async function markExported(entries) {
+  const ts = Date.now(); entries.forEach(e => { if (!e.exp) e.exp = ts; });
+  const m = getMeta(); m.lastExportTs = ts; setMeta(m);
+  await Store.flush(false);
+}
+
+/* Aktuelle Bestellung (überlebt Reload / Tab-Verwerfung durch iOS) */
+let state = { order:{}, given:'' };
+function loadState() {
+  const s = ls.get(K.state, null);
+  if (s && typeof s === 'object') {
+    for (const [k, v] of Object.entries(s.order || {})) if (PMAP.has(k) && Number(v) > 0) state.order[k] = Math.floor(v);
+    state.given = typeof s.given === 'string' ? s.given : '';
+  }
+}
+const saveState = () => ls.set(K.state, state);
+
+/* Theme-IDs hießen bis V11.3 theme1 … theme7 – gespeicherte Auswahl wird übernommen */
+const LEGACY_THEME = { theme1:'gloss', theme2:'nachtblau', theme3:'tanne', theme4:'oled', theme5:'creme', theme6:'eisblau', theme7:'schnee' };
+let settings = Object.assign({ theme:'gloss', prodStep:0, orderStep:0, orderW:430, wake:false }, ls.get(K.settings, {}) || {});
+if (LEGACY_THEME[settings.theme]) { settings.theme = LEGACY_THEME[settings.theme]; ls.set(K.settings, settings); }
+if (!ls.get(K.settings, null)) {     // erster Start: altes Theme übernehmen, sonst iPad-Einstellung „Kontrast erhöhen“ beachten
+  let t = null; try { t = localStorage.getItem(K.oldTheme); } catch (e) {}
+  if (LEGACY_THEME[t]) settings.theme = LEGACY_THEME[t];
+  else { try { if (window.matchMedia && matchMedia('(prefers-contrast: more)').matches) settings.theme = 'oled'; } catch (e) {} }
+}
+const saveSettings = () => ls.set(K.settings, settings);
+
+/* =========================================================
+   4. UI-BAUSTEINE: Rückfrage, Toast, Datei sichern
+   ========================================================= */
+function ask({ title, text = '', ok = 'OK', cancel = 'Abbrechen', danger = false, input = null }) {
+  const d = $('#dlgAsk');
+  if (typeof d.showModal !== 'function') {         // Fallback für sehr alte Browser
+    if (input) { const v = prompt(title + '\n\n' + text); return Promise.resolve(v !== null && (!input.expect || v.trim().toUpperCase() === input.expect) ? v : false); }
+    if (cancel === null) { alert(title + '\n\n' + text); return Promise.resolve(true); }
+    return Promise.resolve(confirm(title + '\n\n' + text));
+  }
+  return new Promise(res => {
+    const okB = $('#askOk'), cB = $('#askCancel'), inp = $('#askInput');
+    $('#askTitle').textContent = title; $('#askText').textContent = text;
+    okB.textContent = ok; okB.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+    cB.hidden = cancel === null; cB.textContent = cancel || '';
+    inp.hidden = !input; inp.value = ''; inp.classList.remove('invalid'); inp.placeholder = input?.placeholder || '';
+    const done = v => { okB.onclick = cB.onclick = d.oncancel = null; if (d.open) d.close(); res(v); };
+    okB.onclick = () => {
+      if (!input) return done(true);
+      if (input.expect && inp.value.trim().toUpperCase() !== input.expect) { inp.classList.add('invalid'); inp.focus(); return; }
+      done(inp.value);
+    };
+    cB.onclick = () => done(false);
+    d.oncancel = ev => { ev.preventDefault(); if (cancel !== null) done(false); };
+    d.showModal();
+    if (input) setTimeout(() => inp.focus(), 50);
+  });
+}
+
+let toastTimer, toastHideTimer, toastSticky = false;
+const CHECK_SVG = '<svg class="check" viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="33"/><path d="M22 37.5l9.5 9.5L51 27"/></svg>';
+/** HUD-Meldung. icon = 'ok' (animierter Haken) oder ein Emoji; hero = große Zahl */
+function toast(icon, t1, t2 = '', err = false, ms = 1700, hero = '') {
+  const el = $('#toast');
+  el.innerHTML = (icon === 'ok' ? CHECK_SVG : `<div class="toast-icon" aria-hidden="true">${icon}</div>`) + `<div class="toast-title">${esc(t1)}</div>` +
+                 (hero ? `<div class="toast-amount">${esc(hero)}</div>` : '') + (t2 ? `<div class="toast-detail">${esc(t2)}</div>` : '');
+  el.classList.toggle('err', err);
+  presentToast(ms, false);
+}
+/** zeigt den Toast; summary = Bestell-Zusammenfassung (bleibt bis Tippen / neue Bestellung / Ablauf) */
+function presentToast(ms, summary) {
+  const el = $('#toast');
+  clearTimeout(toastTimer); clearTimeout(toastHideTimer);
+  el.classList.toggle('is-summary', summary);
+  try { if (el.hidePopover && el.matches(':popover-open')) el.hidePopover(); if (el.showPopover) el.showPopover(); } catch (e) {}
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  toastSticky = summary;
+  toastTimer = setTimeout(hideToast, ms);
+}
+function hideToast() {
+  const el = $('#toast');
+  clearTimeout(toastTimer); toastSticky = false;
+  el.classList.remove('show', 'is-summary');
+  toastHideTimer = setTimeout(() => { try { if (el.hidePopover && el.matches(':popover-open')) el.hidePopover(); } catch (e) {} }, 240);
+}
+const SUMMARY_MS = 6000;
+/** Zusammenfassung eines Bons: Mengen + Artikel (ohne Einzelpreise), Summe, Gezahlt, Rückgeld */
+function orderSummaryHtml(e) {
+  const sale = e.type !== 'storno';
+  const items = e.items.map(i => `<li><span class="sum-qty">${Math.abs(i.qty)}×</span> ${esc(i.name)}</li>`).join('');
+  const rows = sale
+    ? `<div class="line-row"><span>Summe</span><span>${eur(e.total)}</span></div>
+       ${e.given == null ? '<div class="line-row"><span>Gezahlt</span><span>unbekannt</span></div>' :
+       `<div class="line-row"><span>Gezahlt</span><span>${eur(e.given)}${e.exact ? ' (passend)' : ''}</span></div>
+       <div class="line-row is-sum ${e.change < 0 ? 'text-danger' : 'text-success'}"><span>${e.change < 0 ? 'Fehlbetrag' : 'Rückgeld'}</span><span>${eur(Math.abs(e.change))}</span></div>`}`
+    : `<div class="line-row is-sum text-danger"><span>Storno-Betrag</span><span>${eur(e.total)}</span></div>`;
+  return `<ul class="sum-items">${items}</ul><div class="sum-rows">${rows}</div>`;
+}
+function showPaySummary(e) {
+  const title = e.change < 0 ? 'Erfasst mit Fehlbetrag' : e.change > 0 ? 'Rückgeld' : 'Zahlung erfasst';
+  const hero = e.change > 0 ? eur(e.change) : e.change < 0 ? 'fehlt ' + eur(-e.change) : eur(e.total);
+  const el = $('#toast'); el.classList.remove('err');
+  el.innerHTML = CHECK_SVG + `<div class="toast-title">${esc(title)}</div>` +
+    `<div class="toast-amount${e.change < 0 ? ' text-danger' : ''}">${esc(hero)}</div>` + orderSummaryHtml(e) +
+    `<div class="toast-detail">Bon #${e.nr} · Tippen zum Schließen</div>`;
+  presentToast(SUMMARY_MS, true);
+}
+
+/** iPad: Teilen-Menü („In Dateien sichern“, AirDrop, Mail). Sonst: Download. */
+async function saveFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  try {
+    const file = new File([blob], filename, { type: mime });
+    if (navigator.canShare && navigator.canShare({ files:[file] })) {
+      await navigator.share({ files:[file], title:filename });
+      return true;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return false;     // Nutzer hat abgebrochen
+    console.warn('share', e);                            // sonst: Download versuchen
+  }
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return true;
+  } catch (e) { console.warn('download', e); return false; }
+}
+const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; };
+
+/* =========================================================
+   5. KASSE
+   ========================================================= */
+const orderTotal = () => Object.entries(state.order).reduce((s, [id, q]) => s + PMAP.get(id).price * q, 0);
+
+/** relative Helligkeit 0..1 einer Hex-Farbe */
+function lum(hex) {
+  const c = hex.replace('#', '').match(/../g).map(x => parseInt(x, 16) / 255).map(v => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+  return .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+}
+const toneOf = hex => { const hx = hex.startsWith('#') ? hex : '#888888', L = lum(hx); return L > .8 ? 'white' : L > .3 ? 'light' : 'dark'; };
+/** Beschriftung für VoiceOver: Name, Preis, Menge in der Bestellung bzw. Hinweis im Bearbeitungsmodus */
+const tileLabel = (p, q) => `${p.name}, ${eur(p.price)}` + (editMode ? ' – antippen zum Bearbeiten' : q ? `, ${q} in der Bestellung` : '');
+function renderProducts() {
+  $('#grid').innerHTML = PRODUCTS.map(p => {
+    const td = toneOf(p.d[0]), tl = toneOf(p.l[0]);
+    return `<div class="ptile" data-tone-dark="${td}" data-tone-light="${tl}" style="--tile-dark-bg:${p.d[0]};--tile-dark-fg:${p.d[1]};--tile-light-bg:${p.l[0]};--tile-light-fg:${p.l[1]}">
+      <button type="button" class="pbtn" data-id="${p.id}" data-tone-dark="${td}" data-tone-light="${tl}" aria-label="${esc(tileLabel(p, state.order[p.id] || 0))}">
+        <span class="badge" hidden></span><span class="pbtn-emoji" aria-hidden="true">${p.emoji}</span>
+        <span class="pbtn-name">${esc(p.name)}</span><span class="pbtn-price">${eur(p.price)}</span></button>
+      <span class="edit-mark" aria-hidden="true"><svg class="icon"><use href="#i-pencil"/></svg></span>
+      ${p.desc || p.allergens ? `<button type="button" class="info-btn" data-info="${p.id}" aria-label="Infos und Allergene: ${esc(p.name)}"><svg class="icon"><use href="#i-info"/></svg></button>` : ''}
+    </div>`;
+  }).join('');
+}
+function openProductInfo(pid) {
+  const p = PMAP.get(pid); if (!p) return;
+  $('#infoTitle').textContent = `${p.emoji} ${p.name}`;
+  $('#infoBody').innerHTML =
+    (p.desc ? `<div class="info-card"><span class="overline">Beschreibung</span>${esc(p.desc)}</div>` : '') +
+    (p.allergens ? `<div class="info-card is-allergen"><span class="overline">Allergene &amp; Hinweise</span>${esc(p.allergens)}</div>` : '') +
+    `<div class="info-card"><span class="overline">Preis</span>${eur(p.price)}</div>` +
+    `<p class="hint">Bei Fragen zu Zutaten und Allergenen bitte am Stand nachfragen.</p>`;
+  $('#btnInfoEdit').dataset.pid = pid;
+  $('#dlgInfo').showModal();
+}
+
+/* =========================================================
+   PRODUKTE BEARBEITEN (Änderungen überschreiben die Standardwerte aus PRODUCTS)
+   ========================================================= */
+const EDIT_FIELDS = ['name', 'price', 'desc', 'allergens'];
+const DEFAULTS = new Map(PRODUCTS.map(p => [p.id, { name:p.name, price:p.price, desc:p.desc || '', allergens:p.allergens || '' }]));
+let productOverrides = {}, editMode = false, editPid = null;
+function applyOverrides(ov) {
+  productOverrides = {};
+  for (const p of PRODUCTS) {
+    const d = DEFAULTS.get(p.id), o = ov && ov[p.id]; Object.assign(p, d);
+    if (!o || typeof o !== 'object') continue;
+    const c = {};
+    if (typeof o.name === 'string' && o.name.trim()) c.name = o.name.trim().slice(0, 40);
+    if (Number.isInteger(o.price) && o.price > 0 && o.price <= 100000) c.price = o.price;
+    if (typeof o.desc === 'string') c.desc = o.desc.slice(0, 400);
+    if (typeof o.allergens === 'string') c.allergens = o.allergens.slice(0, 400);
+    if (Object.keys(c).length) { productOverrides[p.id] = c; Object.assign(p, c); }
+  }
+}
+async function saveOverrides() { const a = ls.set(K.products, productOverrides); const b = await idb.set(K.products, productOverrides); return a || b; }
+const changedCount = () => Object.keys(productOverrides).length;
+
+async function setEditMode(on) {
+  if (on && Object.keys(state.order).length) {
+    await ask({ title:'Bestellung noch offen', cancel:null, text:'Bitte zuerst die aktuelle Bestellung abschließen oder leeren.\nDanach können Produkte bearbeitet werden.' });
+    return false;
+  }
+  editMode = on; document.documentElement.classList.toggle('editing', on); $('#editBar').hidden = !on;
+  renderOrder();                      // Kachel-Beschriftungen an den Modus anpassen
+  return true;
+}
+function openEditor(pid) {
+  const p = PMAP.get(pid), d = DEFAULTS.get(pid); if (!p) return;
+  editPid = pid;
+  $('#editTitle').textContent = `${p.emoji} ${p.name} bearbeiten`;
+  $('#edName').value = p.name; $('#edPrice').value = num(p.price); $('#edDesc').value = p.desc || ''; $('#edAll').value = p.allergens || '';
+  $('#edPriceHint').textContent = `Standard aus der index.html: ${eur(d.price)}`;
+  $('#edErr').hidden = true; $('#edName').classList.remove('invalid'); $('#edPrice').classList.remove('invalid');
+  $('#edReset').hidden = !productOverrides[pid];
+  $('#dlgEdit').showModal();
+}
+async function saveEditor() {
+  const pid = editPid, d = DEFAULTS.get(pid); if (!d) return;
+  const name = $('#edName').value.trim(), price = parseEuro($('#edPrice').value), err = [];
+  $('#edName').classList.toggle('invalid', !name);
+  const badPrice = price === null || Number.isNaN(price) || price <= 0 || price > 100000;
+  $('#edPrice').classList.toggle('invalid', badPrice);
+  if (!name) err.push('Bitte einen Namen eingeben.');
+  if (badPrice) err.push('Bitte einen gültigen Preis eingeben (z. B. 6,50).');
+  if (err.length) { $('#edErr').textContent = err.join(' '); $('#edErr').hidden = false; return; }
+  const v = { name, price, desc:$('#edDesc').value.trim(), allergens:$('#edAll').value.trim() }, diff = {};
+  for (const k of EDIT_FIELDS) if (v[k] !== d[k]) diff[k] = v[k];
+  const ov = { ...productOverrides }; if (Object.keys(diff).length) ov[pid] = diff; else delete ov[pid];
+  applyOverrides(ov); const ok = await saveOverrides();
+  $('#dlgEdit').close(); renderProducts(); renderOrder();
+  toast(ok ? 'ok' : '⚠️', ok ? 'Gespeichert' : 'Speichern fehlgeschlagen', `${v.name} · ${eur(v.price)}`, !ok, 1400);
+}
+async function resetEditor() {
+  const p = PMAP.get(editPid); if (!p) return;
+  const ok = await ask({ title:'Standard wiederherstellen?', ok:'Wiederherstellen', text:`Name, Preis und Texte von „${p.name}“ werden auf die Werte aus der index.html zurückgesetzt.` });
+  if (!ok) return;
+  const ov = { ...productOverrides }; delete ov[editPid]; applyOverrides(ov); await saveOverrides();
+  $('#dlgEdit').close(); renderProducts(); renderOrder(); toast('ok', 'Standard wiederhergestellt', `${PMAP.get(editPid).name} · ${eur(PMAP.get(editPid).price)}`, false, 1400);
+}
+
+let lastChange = null;     // steuert, welche Zeile/Kachel animiert wird
+let lastPaid = null;       // letzter Bon: Rückgeld bleibt sichtbar, bis die nächste Bestellung beginnt
+function addItem(id, delta) {
+  if (toastSticky) hideToast();
+  const before = state.order[id] || 0, q = before + delta;
+  if (q <= 0) delete state.order[id]; else state.order[id] = q;
+  lastChange = (q > 0 && delta > 0) ? { id, kind: before ? 'bump' : 'new' } : (q > 0 ? { id, kind:'bump' } : null);
+  saveState(); renderOrder();
+}
+
+function renderOrder() {
+  const list = $('#orderList'), ids = Object.keys(state.order), ch = lastChange; lastChange = null;
+  list.innerHTML = ids.length ? ids.map(id => {
+    const p = PMAP.get(id), q = state.order[id], cls = ch && ch.id === id ? ' ' + ch.kind : '', last = q === 1;
+    return `<div class="order-item${cls}" role="listitem" data-id="${id}">
+      <div class="order-item-name"><span aria-hidden="true">${p.emoji}</span> ${esc(p.name)}<span class="order-item-unit">${eur(p.price)}</span></div>
+      <div class="stepper">
+        <button type="button" class="minus${last ? ' is-del' : ''}" data-act="minus" aria-label="${esc(p.name)} ${last ? 'entfernen' : 'weniger'}"><svg class="icon"><use href="#i-${last ? 'trash' : 'minus'}"/></svg></button>
+        <span class="qty">${q}</span>
+        <button type="button" class="plus" data-act="plus" aria-label="${esc(p.name)} mehr"><svg class="icon"><use href="#i-plus"/></svg></button>
+      </div>
+      <div class="order-item-sum">${eur(p.price * q)}</div></div>`;
+  }).join('') : '<div class="empty"><svg class="icon"><use href="#i-bag"/></svg><div>Noch keine Artikel<br><span>Produkt antippen, um zu starten</span></div></div>';
+  document.querySelectorAll('.pbtn').forEach(b => {
+    const q = state.order[b.dataset.id] || 0, bd = b.querySelector('.badge');
+    bd.hidden = !q; bd.textContent = q ? '×' + q : '';
+    b.setAttribute('aria-label', tileLabel(PMAP.get(b.dataset.id), q));
+    if (ch && ch.id === b.dataset.id && q) { bd.classList.remove('pop'); void bd.offsetWidth; bd.classList.add('pop'); }
+  });
+  const n = ids.reduce((s, id) => s + state.order[id], 0);
+  $('#orderCount').textContent = n ? ` · ${n} Artikel` : '';
+  const t = $('#total'), txt = eur(orderTotal());
+  if (t.textContent !== txt) { t.textContent = txt; t.classList.remove('tick'); void t.offsetWidth; t.classList.add('tick'); }
+  $('#btnClear').disabled = !ids.length;
+  setPayEnabled(Store.ready && !busy);
+  updateChange();
+}
+
+function updateChange() {
+  const total = orderTotal(), g = parseEuro(state.given), el = $('#change'), card = $('#changeCard');
+  $('#givenCard').classList.toggle('invalid', Number.isNaN(g));
+  $('#btnGivenClear').hidden = !state.given;
+  if (lastPaid && (total || state.given)) lastPaid = null;      // neue Bestellung begonnen
+  let st = 'neutral', label = 'Rückgeld';
+  if (lastPaid) {
+    label = `Rückgeld · Bon #${lastPaid.nr}`;
+    if (lastPaid.change < 0) { el.textContent = 'fehlt ' + eur(-lastPaid.change); st = 'deficit'; }
+    else { el.textContent = lastPaid.change ? eur(lastPaid.change) : 'passend'; st = 'ok'; }
+  }
+  else if (g === null) el.textContent = total ? 'passend' : '–';
+  else if (Number.isNaN(g)) { el.textContent = 'Eingabe prüfen'; st = 'deficit'; }
+  else { const c = g - total; if (c < 0) { el.textContent = 'fehlt ' + eur(-c); st = 'deficit'; } else { el.textContent = eur(c); st = 'ok'; } }
+  $('#changeLabel').textContent = label;
+  card.dataset.state = st;
+  card.toggleAttribute('data-last', !!lastPaid);
+}
+
+function setGiven(v) { state.given = v; $('#given').value = v; saveState(); updateChange(); }
+
+let busy = false;
+function setPayEnabled(on) { const ok = on && orderTotal() > 0; $('#btnPay').disabled = !ok; $('#btnPayPrint').disabled = !ok; }
+
+async function capture(withBon) {
+  if (busy || !Store.ready) return;
+  busy = true; setPayEnabled(false);
+  try {
+    const total = orderTotal();
+    if (total <= 0) { toast('🛒', 'Keine Artikel', 'Bitte zuerst Produkte antippen.', true); return; }
+    let g = parseEuro(state.given);
+    if (Number.isNaN(g)) { await ask({ title:'Ungültiger Betrag', text:`„${state.given}“ ist kein gültiger Betrag.\nBitte korrigieren (z. B. 10 oder 12,50).`, cancel:null }); return; }
+    const exact = g === null;
+    if (exact) g = total;
+    if (g < total) {
+      const ok = await ask({ title:'⚠️ Fehlbetrag', text:`Gegeben: ${eur(g)}\nSumme: ${eur(total)}\nEs fehlen ${eur(total - g)}.\n\nTrotzdem erfassen?`, ok:'Trotzdem erfassen', danger:true });
+      if (!ok) return;
+    }
+    const now = new Date();
+    const entry = {
+      id:uid(), nr:Store.nextNr(), ts:now.toISOString(), date:now.toLocaleDateString('de-DE'), time:now.toLocaleTimeString('de-DE'),
+      type:'sale', payment:'bar', exact, total, given:g, change:g - total,
+      warnings:g < total ? ['unterzahlung'] : g - total > PLAUSI_MAX_RUECKGELD ? ['plausibilitaet'] : [],
+      items:Object.entries(state.order).map(([id, q]) => { const p = PMAP.get(id); return { pid:id, emoji:p.emoji, name:p.name, qty:q, price:p.price }; })
+    };
+    const saving = Store.append(entry);      // localStorage ist hier bereits synchron geschrieben
+    lastPaid = { nr:entry.nr, change:entry.change };
+    state = { order:{}, given:'' }; $('#given').value = ''; saveState(); renderOrder();
+    if (withBon === true) printHtml(bonHtml(entry));
+    showPaySummary(entry);
+    if (!(await saving)) {
+      await ask({ title:'❌ Speichern fehlgeschlagen', text:'Der Bon ist nur noch im Arbeitsspeicher!\nBitte SOFORT Menü → „Daten retten“ → Kopieren, und danach ein Backup erstellen.', cancel:null, danger:true });
+      openRescue();
+    }
+  } finally { busy = false; setPayEnabled(Store.ready); }
+}
+
+/* =========================================================
+   6. ERFASSUNGEN, STORNO, TAGESABSCHLUSS
+   ========================================================= */
+const voidedIds = () => new Set(allEntries().filter(e => e.type === 'storno').map(e => e.refId));
+const itemLabel = i => (i.emoji ? i.emoji + ' ' : '') + i.name;
+
+function stats(entries) {
+  const voided = voidedIds(); const prod = new Map();
+  let revenue = 0, sales = 0, stornos = 0, deficit = 0, unknown = 0;
+  for (const e of entries) {
+    revenue += e.total;
+    if (e.type === 'storno') stornos++;
+    else {
+      sales++;
+      if (e.change < 0 && !voided.has(e.id)) deficit += -e.change;
+      if (e.payment === 'unbekannt' && !voided.has(e.id)) unknown += e.total;
+    }
+    for (const i of e.items) {
+      const k = i.pid || i.name, r = prod.get(k) || { name:itemLabel(i), qty:0, sum:0 };
+      r.qty += i.qty; r.sum += i.qty * i.price; prod.set(k, r);
+    }
+  }
+  return { revenue, sales, stornos, deficit, unknown, cash:revenue - deficit - unknown, prod:[...prod.values()].filter(r => r.qty).sort((a, b) => b.sum - a.sum) };
+}
+
+let logSource = 'log', lastSource = null, logView = 'orders';
+const SRC_LABEL = { log:'Aktuell', archive:'Archiv', all:'Alle' };
+const sourceEntries = () => logSource === 'archive' ? Store.archive.slice() : logSource === 'all' ? allEntries() : Store.log;
+function selectedEntries() {
+  const v = $('#logDay').value, src = sourceEntries();
+  return (!v || v === '__all') ? src : src.filter(e => e.date === v);
+}
+function openLog(src = 'log') { logSource = src; renderLog(); if (!$('#dlgLog').open) $('#dlgLog').showModal(); }
+
+function renderLog() {
+  const sel = $('#logDay'), today = new Date().toLocaleDateString('de-DE'), src = sourceEntries();
+  const prev = lastSource === logSource ? sel.value : null; lastSource = logSource;
+  document.querySelectorAll('#logSrc [data-src]').forEach(b => {
+    b.setAttribute('aria-pressed', String(b.dataset.src === logSource));
+    const n = b.dataset.src === 'archive' ? Store.archive.length : b.dataset.src === 'all' ? Store.log.length + Store.archive.length : Store.log.length;
+    b.querySelector('span').textContent = ` ${n}`;
+  });
+  const days = [...new Set(src.map(e => e.date))].reverse();
+  sel.innerHTML = `<option value="__all">Alle Tage (${src.length})</option>` + days.map(d => `<option value="${esc(d)}">${esc(d)}${d === today ? ' (heute)' : ''}</option>`).join('');
+  sel.value = (prev && [...sel.options].some(o => o.value === prev)) ? prev : (logSource === 'log' && days.includes(today) ? today : '__all');
+
+  const entries = selectedEntries(), st = stats(entries), voided = voidedIds(), n = unexported(entries);
+  const logIds = new Set(Store.log.map(e => e.id)), arcIds = new Set(Store.archive.map(e => e.id));
+  $('#btnCsv2').querySelector('span').textContent = `CSV exportieren (${entries.length} ${entries.length === 1 ? 'Buchung' : 'Buchungen'})`;
+  $('#btnCsv2').disabled = !entries.length;
+
+  let info = '';
+  if (logSource === 'log' && !Store.log.length && Store.archive.length)
+    info = `<div class="notice"><span>„Aktuell“ ist leer. <b>${Store.archive.length} Buchungen</b> liegen im Archiv.</span><button type="button" class="btn btn-sm" data-goto="archive">Archiv anzeigen</button></div>`;
+  else if (logSource === 'archive')
+    info = Store.archive.length
+      ? `<div class="notice"><span>Archivierte Buchungen: ansehen, exportieren und nachdrucken. Für Storno erst zurückholen.</span><button type="button" class="btn btn-sm" id="btnRestoreArc">Zurück nach „Aktuell“</button></div>`
+      : '<div class="notice"><span>Das Archiv ist leer.</span></div>';
+  $('#logInfo').innerHTML = info;
+
+  $('#logStats').innerHTML =
+    (n ? `<div class="notice-warn">⚠️ ${n} der angezeigten Buchung(en) wurden noch nicht als CSV exportiert. Unten „CSV exportieren“ antippen.</div>` : '') +
+    (entries.length ? `<div class="stats">
+       <div class="stat"><div class="stat-value">${eur(st.revenue)}</div><div class="overline">Umsatz (nach Storno)</div></div>
+       <div class="stat"><div class="stat-value">${eur(st.cash)}</div><div class="overline">Bargeld-Soll</div></div>
+       <div class="stat"><div class="stat-value">${st.sales}</div><div class="overline">Bons</div></div>
+       <div class="stat"><div class="stat-value">${st.stornos}</div><div class="overline">Stornos</div></div>
+       ${st.deficit ? `<div class="stat"><div class="stat-value text-danger">${eur(st.deficit)}</div><div class="overline">Fehlbeträge</div></div>` : ''}
+       ${st.unknown ? `<div class="stat"><div class="stat-value">${eur(st.unknown)}</div><div class="overline">Zahlung unbekannt</div></div>` : ''}
+     </div>` : '') +
+    (entries.length ? `<div class="row-inline view-switch"><div class="segmented segmented-lg" id="logView" role="group" aria-label="Ansicht">
+        <button type="button" data-view="items" aria-pressed="${logView === 'items'}">Verkaufte Artikel</button>
+        <button type="button" data-view="orders" aria-pressed="${logView === 'orders'}">Alle Bestellungen<span> ${entries.length}</span></button>
+      </div></div>` : '');
+  const itemsHtml = st.prod.length ? `<table class="data-table"><thead><tr><th>Artikel</th><th class="num">Menge</th><th class="num">Summe</th></tr></thead><tbody>` +
+      st.prod.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${r.qty}</td><td class="num">${eur(r.sum)}</td></tr>`).join('') + `</tbody></table>` : '<p class="muted">Keine Artikel.</p>';
+
+  const shown = entries.slice().reverse(), LIMIT = 300;
+  const ordersHtml = !shown.length ? '<p class="muted">Keine Buchungen in diesem Bereich.</p>' :
+    `<h3>Buchungen · ${SRC_LABEL[logSource]} (neueste zuerst)</h3>` + shown.slice(0, LIMIT).map(e => {
+      const isS = e.type === 'storno', isV = voided.has(e.id), inLog = logIds.has(e.id);
+      return `<div class="bon ${isS ? 'is-storno' : ''} ${isV ? 'is-voided' : ''}">
+        <div class="bon-head">
+          <div><strong>#${e.nr}</strong> <span class="muted">${esc(e.date)} ${esc(e.time)}</span>
+            ${isS ? `<span class="tag">STORNO zu #${esc(e.ref)}</span>` : ''}${isV ? '<span class="tag">storniert</span>' : ''}
+            ${(e.warnings || []).map(w => `<span class="tag">${esc(WARN_LABEL[w] || w)}</span>`).join('')}
+            ${logSource === 'all' && arcIds.has(e.id) ? '<span class="tag tag-muted">Archiv</span>' : ''}
+            ${e.exp ? '' : '<span class="tag tag-muted">nicht exportiert</span>'}</div>
+          <div class="controls">
+            <button type="button" class="btn btn-sm" data-reprint="${esc(e.id)}"><svg class="icon"><use href="#i-receipt"/></svg>Bon</button>
+            ${!isS && !isV && inLog ? `<button type="button" class="btn btn-sm btn-soft-danger" data-storno="${esc(e.id)}">Storno</button>` : ''}
+          </div>
+        </div>
+        ${e.items.map(i => `<div class="line-row"><span>${i.qty}× ${esc(itemLabel(i))}</span><span>${eur(i.qty * i.price)}</span></div>`).join('')}
+        <div class="line-row is-sum"><span>Gesamt</span><span>${eur(e.total)}</span></div>
+        ${!isS && e.given == null ? '<div class="line-row muted"><span>Zahlung unbekannt</span><span></span></div>' : ''}
+        ${!isS && e.given != null ? `<div class="line-row muted"><span>${e.exact ? 'passend bezahlt' : 'Gegeben ' + eur(e.given)}</span><span class="${e.change < 0 ? 'text-danger' : ''}">${e.change < 0 ? 'Fehlbetrag ' + eur(-e.change) : 'Rückgeld ' + eur(e.change)}</span></div>` : ''}
+      </div>`;
+    }).join('') + (shown.length > LIMIT ? `<p class="muted">… ${shown.length - LIMIT} ältere Buchungen sind im CSV-Export enthalten.</p>` : '');
+  $('#logList').innerHTML = (logView === 'items' && entries.length) ? itemsHtml : ordersHtml;
+}
+
+async function restoreArchive() {
+  if (!Store.archive.length) return;
+  const ok = await ask({ title:'Archiv zurückholen?', ok:'Zurückholen',
+    text:`${Store.archive.length} archivierte Buchungen werden zurück nach „Aktuell“ verschoben.\nBon-Nummern und Export-Status bleiben unverändert.` });
+  if (!ok) return;
+  const n = Store.archive.length;
+  Store.log = mergeById(Store.log, Store.archive); Store.archive = [];
+  await Store.flush(false); logSource = 'log'; renderLog(); updateChips();
+  toast('ok', 'Zurückgeholt', `${n} Buchungen sind wieder in „Aktuell“`, false, 1800);
+}
+
+async function storno(id) {
+  const e = Store.log.find(x => x.id === id);
+  if (!e || e.type !== 'sale' || voidedIds().has(id)) return;
+  const ok = await ask({ title:`Bon #${e.nr} stornieren?`, text:`Es wird eine Gegenbuchung über ${eur(-e.total)} angelegt.\nDer Original-Bon bleibt nachvollziehbar erhalten.`, ok:'Stornieren', danger:true });
+  if (!ok) return;
+  const now = new Date();
+  await Store.append({ id:uid(), nr:Store.nextNr(), ts:now.toISOString(), date:now.toLocaleDateString('de-DE'), time:now.toLocaleTimeString('de-DE'),
+    type:'storno', ref:e.nr, refId:e.id, exact:true, total:-e.total, given:0, change:0, items:e.items.map(i => ({ ...i, qty:-i.qty })) });
+  renderLog(); toast('↩️', 'Storniert', `Bon #${e.nr}`);
+}
+
+/* =========================================================
+   7. EXPORT, BACKUP, IMPORT, RETTUNG
+   ========================================================= */
+function buildCsv(entries, arcIds = new Set()) {
+  const q = v => { const s = String(v ?? ''); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const rows = [['Datum','Uhrzeit','Bon-Nr','Typ','Bezug-Bon','Artikel','Menge','Einzelpreis','Positionssumme','Bonsumme','Gegeben','Rückgeld','Passend','Archiviert','Zeitstempel (UTC)','Bon-ID','Zahlungsart','Hinweise']];
+  for (const e of entries) e.items.forEach((i, ix) => {
+    const first = ix === 0, sale = e.type !== 'storno', paid = sale && e.given != null;
+    rows.push([e.date, e.time, e.nr, sale ? 'Verkauf' : 'Storno', e.ref ?? '', i.name, i.qty, num(i.price), num(i.qty * i.price),
+      first ? num(e.total) : '', first && paid ? num(e.given) : '', first && paid ? num(e.change) : '', first ? (e.exact ? 'ja' : 'nein') : '', arcIds.has(e.id) ? 'ja' : 'nein', e.ts, e.id,
+      first && sale ? (e.payment || 'bar') : '', first ? (e.warnings || []).map(w => WARN_LABEL[w] || w).join(', ') : '']);
+  });
+  return '\ufeff' + rows.map(r => r.map(q).join(';')).join('\r\n') + '\r\n';
+}
+
+async function exportCsv(entries = allEntries(), scope = 'alle') {
+  if (!entries.length) {
+    await ask({ title:'Keine Buchungen', cancel:null, text: Store.archive.length && scope !== 'alle'
+      ? `In diesem Bereich gibt es keine Buchungen.\n${Store.archive.length} Buchungen liegen im Archiv – oben „Archiv“ oder „Alle“ wählen.`
+      : 'Es gibt noch nichts zu exportieren.' });
+    return;
+  }
+  const arcIds = new Set(Store.archive.map(e => e.id));
+  const ok = await saveFile(`pottschatz_${scope}_${stamp()}.csv`, buildCsv(entries, arcIds), 'text/csv;charset=utf-8');
+  if (ok) {
+    await markExported(entries); updateChips(); updateExportInfo(); if ($('#dlgLog').open) renderLog();
+    toast('ok', 'CSV exportiert', `${entries.length} Buchungen`, false, 1400);
+  }
+}
+function exportFromLog() {
+  const day = $('#logDay').value;
+  const scope = { log:'aktuell', archive:'archiv', all:'alle' }[logSource] + (day && day !== '__all' ? '_' + day.replace(/\./g, '-') : '');
+  exportCsv(selectedEntries(), scope);
+}
+
+async function exportBackup() {
+  const ok = await saveFile(`pottschatz_backup_${stamp()}.json`, JSON.stringify(Store.dump(), null, 1), 'application/json');
+  if (ok) toast('💾', 'Backup erstellt', '', false, 1200);
+}
+
+async function importBackup(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch (e) { await ask({ title:'Import fehlgeschlagen', text:'Die Datei ist kein gültiges Backup (JSON).', cancel:null }); return; }
+  if (data && data.productOverrides && typeof data.productOverrides === 'object' && Object.keys(data.productOverrides).length
+      && JSON.stringify(data.productOverrides) !== JSON.stringify(productOverrides)) {
+    const takeOver = await ask({ title:'Produktdaten übernehmen?', ok:'Übernehmen', cancel:'Nicht übernehmen',
+      text:`Das Backup enthält geänderte Preise/Texte für ${Object.keys(data.productOverrides).length} Produkt(e).\nSollen diese auf diesem iPad übernommen werden?` });
+    if (takeOver) { applyOverrides(data.productOverrides); await saveOverrides(); renderProducts(); renderOrder(); }
+  }
+  let log = [], arc = [];
+  if (Array.isArray(data)) log = data.map(x => isValidEntry(x) ? x : migrateV1(x)).filter(Boolean);   // Rettungstext v9.7 oder v10-Liste
+  else if (data && Array.isArray(data.log)) { log = data.log; arc = Array.isArray(data.archive) ? data.archive : []; }
+  if (Array.isArray(data)) markiereAndereTage(log);
+  const vorher = log.length + arc.length;
+  log = log.map(bereinige).filter(isValidEntry); arc = arc.map(bereinige).filter(isValidEntry);
+  const verworfen = vorher - log.length - arc.length;      // z. B. Summe passt nicht zu den Positionen
+  const known = new Set([...Store.log, ...Store.archive].map(e => e.id));
+  const newLog = log.filter(e => !known.has(e.id)), newArc = arc.filter(e => !known.has(e.id));
+  if (!newLog.length && !newArc.length) {
+    const inFile = [...log, ...arc], inLog = new Set(Store.log.map(e => e.id)), inArc = new Set(Store.archive.map(e => e.id));
+    const nLog = inFile.filter(e => inLog.has(e.id)).length, nArc = inFile.filter(e => inArc.has(e.id)).length;
+    const go = await ask({ title:'Daten sind schon auf diesem iPad', ok:'Erfassungen öffnen', cancel:'Schließen',
+      text:`Alle ${inFile.length} Buchungen aus dieser Datei sind bereits gespeichert – es fehlt nichts.\n• ${nLog} in „Aktuell“\n• ${nArc} im „Archiv“\n\nZum Exportieren: Erfassungen → oben „Archiv“ oder „Alle“ wählen → „CSV exportieren“.` });
+    if (go) { $('#dlgMenu').close(); openLog(nArc && nLog ? 'all' : nArc ? 'archive' : 'log'); }
+    return;
+  }
+  const ok = await ask({ title:'Backup importieren?', ok:'Importieren',
+    text:`${newLog.length} neue Buchung(en) und ${newArc.length} Archiv-Buchung(en) werden ergänzt.\nVorhandene Daten bleiben erhalten (keine Überschreibung).` +
+         importBericht([...newLog, ...newArc]) + (verworfen ? `\n\n❌ ${verworfen} ungültige Buchung(en) werden NICHT übernommen (Summe passt nicht zu den Positionen).` : '') });
+  if (!ok) return;
+  Store.log = mergeById(Store.log, newLog); Store.archive = mergeById(Store.archive, newArc);
+  Store.counter = Math.max(Store.counter, maxNr(Store.log), maxNr(Store.archive), Number(data.counter) || 0);
+  await Store.flush(); toast('📥', 'Import abgeschlossen', `${newLog.length + newArc.length} Buchungen`);
+}
+
+/** Rettungsansicht: NUR Buchungen + geänderte Produkte (die Standard-Produktliste steht ohnehin in der index.html
+    und sah im Rettungsfenster nach „Bestellungen“ aus, obwohl alles gelöscht war). */
+function openRescue() {
+  let raw = null; try { raw = localStorage.getItem(K.oldLog); } catch (e) {}
+  const d = { app:'pottschatz-kasse', version:APP_VERSION, exportedAt:new Date().toISOString(), counter:Store.counter,
+              productOverrides, log:Store.log, archive:Store.archive };
+  if (raw) d.oldV97Raw = raw;          // alte V9.7-Daten (falls noch vorhanden) bleiben gültiges JSON
+  let txt; try { txt = JSON.stringify(d, null, 1); } catch (e) { txt = 'FEHLER: ' + e; }
+  const n = Store.log.length + Store.archive.length;
+  $('#rescueInfo').innerHTML = n
+    ? `Gespeichert: <b>${Store.log.length}</b> aktuelle Buchungen · <b>${Store.archive.length}</b> im Archiv · letzte Bon-Nr. <b>${Store.counter}</b>`
+    : `<b>Keine Buchungen gespeichert</b> – die Kasse ist leer.${raw ? ' Es sind noch alte Daten aus Version 9.7 vorhanden.' : ''}`;
+  $('#rescueText').value = txt;
+  $('#btnRescueWipe').disabled = !n && !raw && !Object.keys(productOverrides).length;
+  if (!$('#dlgRescue').open) $('#dlgRescue').showModal();
+}
+async function copyRescue() {
+  const ta = $('#rescueText');
+  try { await navigator.clipboard.writeText(ta.value); toast('📋', 'Kopiert', 'Jetzt in Notizen/Mail einfügen', false, 1500); }
+  catch (e) { ta.removeAttribute('readonly'); ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length); try { document.execCommand('copy'); toast('📋', 'Kopiert'); } catch (e2) { toast('✋', 'Bitte manuell kopieren', 'Text ist markiert', true); } ta.setAttribute('readonly', ''); }
+}
+
+async function archiveLog() {
+  if (!Store.log.length) { await ask({ title:'Nichts zu archivieren', text:'Es sind keine Buchungen vorhanden.', cancel:null }); return; }
+  const n = unexported(Store.log);
+  const res = await ask({ title:'🗄 Erfassungen archivieren', danger:true, ok:'Archivieren',
+    text:`${Store.log.length} Buchungen werden nach „Archiv“ verschoben. Sie bleiben vollständig erhalten und können jederzeit unter Erfassungen → „Archiv“ angesehen und exportiert werden.` +
+         (n ? `\n\n⚠️ ACHTUNG: ${n} Buchungen wurden noch NICHT exportiert!` : '') + `\n\nZum Bestätigen ARCHIV eingeben:`,
+    input:{ expect:'ARCHIV', placeholder:'ARCHIV' } });
+  if (res === false) return;
+  Store.archive = mergeById(Store.archive, Store.log); Store.log = [];
+  await Store.flush(false);
+  updateChips(); $('#dlgMenu').close(); toast('🗄', 'Archiviert', 'Neuer Kassentag kann beginnen');
+}
+
+/** prüft nach dem Zurücksetzen BEIDE Speicher (localStorage + IndexedDB) */
+async function resetVerified() {
+  const empty = v => v === undefined || v === null || (Array.isArray(v) && v.length === 0);   // undefined = IndexedDB nicht verfügbar
+  const [iLog, iArc] = await Promise.all([idb.get(K.log), idb.get(K.archive)]);
+  return empty(ls.get(K.log, [])) && empty(ls.get(K.archive, [])) && empty(iLog) && empty(iArc);
+}
+/** Setzt die Kasse vollständig auf 0: alle Buchungen, Archiv, Rettungs-/Altdaten, Zähler. */
+async function factoryReset() {
+  const un = unexported();
+  const res = await ask({ title:'🧨 Kasse komplett zurücksetzen', danger:true, ok:'Endgültig löschen',
+    text:`Folgendes wird ENDGÜLTIG gelöscht:\n• ${Store.log.length} aktuelle Buchungen\n• ${Store.archive.length} archivierte Buchungen\n• Rettungsdaten und alte Daten (V9.7)\n• die offene Bestellung\n\nDie nächste Bon-Nummer ist wieder 1.\nFarbschema und Schriftgrößen bleiben erhalten.` +
+         (un ? `\n\n⚠️ ${un} Buchungen wurden noch NICHT exportiert!` : '') +
+         `\n\nTipp: Vorher „CSV exportieren“ bzw. „Backup sichern“.\nBereits gespeicherte Dateien (z. B. in der Dateien-App) werden NICHT gelöscht.\n\nZum Bestätigen LÖSCHEN eingeben:`,
+    input:{ expect:'LÖSCHEN', placeholder:'LÖSCHEN' } });
+  if (res === false) return;
+  Store.log = []; Store.archive = []; Store.counter = 0;
+  state = { order:{}, given:'' }; $('#given').value = '';
+  try { [K.log, K.archive, K.counter, K.state, K.meta, K.oldLog].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  resetTs = Date.now();
+  setMeta({ lastExportNr:0, lastExportTs:0, migratedV1:true, expMigrated:true, resetTs });
+  lastPaid = null;
+  await Store.flush(false);                      // schreibt leere Daten + Zähler 0 in localStorage UND IndexedDB
+  const ok = await resetVerified();              // wirklich leer? (sonst kämen Bons beim nächsten Start aus IndexedDB zurück)
+  saveState(); renderOrder(); updateChips(); updateExportInfo();
+  $('#dlgMenu').close();
+  if ($('#dlgRescue').open) openRescue();
+  if (ok) toast('🧨', 'Kasse zurückgesetzt', 'Nächster Bon: #1', false, 2500);
+  else toast('⚠️', 'Zurücksetzen unvollständig', 'Bitte Seite neu laden und erneut versuchen', true, 4000);
+}
+let resetTs = 0;
+
+function openLastBon() {
+  const e = lastEntry();
+  if (!e) { toast('🧾', 'Noch kein Bon', 'Es wurde noch nichts erfasst.'); return; }
+  const isS = e.type === 'storno', isV = voidedIds().has(e.id);
+  $('#lastTitle').textContent = isS ? `Letzter Bon #${e.nr} · Storno zu #${e.ref}` : `Letzter Bon #${e.nr}`;
+  $('#lastBody').innerHTML = `<p class="muted last-meta">${esc(e.date)} · ${esc(e.time)}${isV ? ' <span class="tag">storniert</span>' : ''}</p>` + orderSummaryHtml(e);
+  $('#dlgLast').showModal();
+}
+
+/* =========================================================
+   8. DRUCK
+   ========================================================= */
+function bonHtml(e, copy = false) {
+  const sale = e.type !== 'storno';
+  return `<div class="bon-center bon-title">${esc(CONFIG.shopName)}</div>
+    <div class="bon-center">${esc(CONFIG.title)}</div>
+    <div class="bon-center bon-gap">${sale ? 'Bon' : 'STORNO zu Bon #' + esc(e.ref) + ' –'} #${e.nr}${copy ? ' (Kopie)' : ''}</div>
+    <div class="bon-center">${esc(e.date)} ${esc(e.time)}</div><div class="bon-sep"></div>
+    ${e.items.map(i => `<div class="bon-row"><span>${i.qty}× ${esc(i.name)}</span><span>${num(i.qty * i.price)} €</span></div>`).join('')}
+    <div class="bon-sep"></div><div class="bon-row bon-total"><span>GESAMT</span><span>${num(e.total)} €</span></div>
+    ${sale && e.given == null ? '<div class="bon-row"><span>Zahlung</span><span>unbekannt</span></div>' : ''}
+    ${sale && e.given != null ? `<div class="bon-row"><span>Gegeben</span><span>${num(e.given)} €</span></div><div class="bon-row"><span>${e.change < 0 ? 'Fehlbetrag' : 'Rückgeld'}</span><span>${num(Math.abs(e.change))} €</span></div>` : ''}
+    <div class="bon-sep"></div><div class="bon-center">Vielen Dank!</div>`;
+}
+function dayReportHtml() {
+  const label = SRC_LABEL[logSource] + ' · ' + ($('#logDay').selectedOptions[0]?.textContent || ''), st = stats(selectedEntries());
+  return `<div class="bon-center bon-title bon-title-report">${esc(CONFIG.shopName)} – Tagesbericht</div>
+    <div class="bon-center">${esc(label)}</div><div class="bon-center">gedruckt ${new Date().toLocaleString('de-DE')}</div><div class="bon-sep"></div>
+    ${st.prod.map(r => `<div class="bon-row"><span>${r.qty}× ${esc(r.name.replace(/^\S+\s/, ''))}</span><span>${num(r.sum)} €</span></div>`).join('')}
+    <div class="bon-sep"></div>
+    <div class="bon-row bon-total"><span>UMSATZ</span><span>${num(st.revenue)} €</span></div>
+    <div class="bon-row"><span>Bargeld-Soll</span><span>${num(st.cash)} €</span></div>
+    <div class="bon-row"><span>Bons / Stornos</span><span>${st.sales} / ${st.stornos}</span></div>
+    ${st.deficit ? `<div class="bon-row"><span>Fehlbeträge</span><span>${num(st.deficit)} €</span></div>` : ''}
+    ${st.unknown ? `<div class="bon-row"><span>Zahlung unbekannt</span><span>${num(st.unknown)} €</span></div>` : ''}
+    <div class="bon-sep"></div><div>Kassensturz Ist: ______________ €</div><br><div>Unterschrift: ______________</div>`;
+}
+function printHtml(html) { $('#printArea').innerHTML = html; try { window.print(); } catch (e) { toast('🖨', 'Drucken nicht möglich', String(e), true); } }
+
+/* =========================================================
+   9. GERÄT: Status, Offline, Wake Lock, Theme, Schrift, Resizer
+   ========================================================= */
+let swState = 'none', persisted = false, wakeLock = null;
+
+function updateChips() {
+  const set = (id, text, cls = '') => { const el = $(id); el.textContent = text; el.className = 'chip ' + cls; };
+  set('#chipNet', navigator.onLine ? 'Online' : 'Offline');
+  if (updateReady) set('#chipOffline', 'Update bereit – tippen', 'info');
+  else if (swState === 'ready') set('#chipOffline', 'Offline-fähig', 'good');
+  else if (swState === 'partial') set('#chipOffline', 'Offline-Cache unvollständig', 'warn');
+  else if (location.protocol === 'file:') set('#chipOffline', 'Lokale Datei');
+  else set('#chipOffline', 'Nicht offline-fähig', 'warn');
+  if (!Store.ready) set('#chipSave', 'Lade Daten …');
+  else if (Store.lsOk && Store.idbOk) set('#chipSave', 'Doppelt gesichert' + (persisted ? ' · dauerhaft' : ''), 'good');
+  else if (Store.lsOk || Store.idbOk) set('#chipSave', 'Nur einfach gesichert', 'warn');
+  else set('#chipSave', 'Speichern fehlgeschlagen', 'warn');
+  const n = Store.ready ? unexported() : 0;
+  $('#btnLastBon').disabled = !Store.ready || !(Store.log.length || Store.archive.length);
+  set('#chipExport', n ? `${n} nicht exportiert` : 'Alles exportiert', n >= CONFIG.exportReminder ? 'warn' : (n ? '' : 'good'));
+}
+function tickClock() { const el = $('#clock'); if (el) el.textContent = new Date().toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' }); }
+function updateExportInfo() {
+  const m = getMeta();
+  $('#exportInfo').textContent = m.lastExportTs ? `Letzter CSV-Export: ${new Date(m.lastExportTs).toLocaleString('de-DE')} · seitdem ${unexported()} neue Buchung(en).` : 'Noch kein CSV-Export auf diesem Gerät.';
+  $('#prodInfo').textContent = changedCount() ? `${changedCount()} Produkt(e) auf diesem iPad geändert. Standard je Produkt im Bearbeiten-Fenster wiederherstellbar.` : 'Preise und Texte entsprechen der index.html.';
+  $('#versionInfo').textContent = `Version ${APP_VERSION} · ${Store.log.length} Buchungen aktiv · ${Store.archive.length} im Archiv · letzte Bon-Nr. ${Store.counter}`;
+}
+
+let updateReady = false;
+/** Prüft, ob die Startseite wirklich im Offline-Cache liegt (nicht nur „SW registriert“). */
+async function verifyOfflineCache() {
+  try {
+    if (!('caches' in window)) return false;
+    const base = new URL('./', location.href).href;
+    return !!((await caches.match(base + 'index.html', { ignoreSearch:true })) || (await caches.match(base, { ignoreSearch:true })));
+  } catch (e) { return false; }
+}
+function registerSW() {
+  const secure = location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname);
+  if (!('serviceWorker' in navigator) || !secure) { updateChips(); return; }
+  navigator.serviceWorker.register('sw.js', { scope:'./', updateViaCache:'none' })
+    .then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing; if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          // Nur wenn bereits eine Version lief, ist das ein UPDATE (nicht die Erstinstallation)
+          if ((nw.state === 'installed' || nw.state === 'activated') && hadController) { updateReady = true; updateChips(); }
+        });
+      });
+      if (navigator.onLine) reg.update().catch(() => {});
+      return navigator.serviceWorker.ready;
+    })
+    .then(async () => { swState = (await verifyOfflineCache()) ? 'ready' : 'partial'; updateChips(); })
+    .catch(e => { console.warn('SW', e); swState = 'error'; updateChips(); });
+  navigator.serviceWorker.addEventListener('message', async ev => {
+    if (ev.data && ev.data.type === 'CACHED' && (await verifyOfflineCache())) { swState = 'ready'; updateChips(); }
+  });
+}
+const hadController = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+
+async function requestPersist() {
+  try { if (navigator.storage && navigator.storage.persist) persisted = (await navigator.storage.persisted()) || (await navigator.storage.persist()); } catch (e) {}
+  updateChips();
+}
+async function applyWake() {
+  const btn = $('#btnWake');
+  if (!('wakeLock' in navigator)) { btn.querySelector('span').textContent = 'Wach halten nicht unterstützt – Auto-Sperre in den iPad-Einstellungen ausschalten'; btn.disabled = true; return; }
+  try {
+    if (settings.wake && document.visibilityState === 'visible' && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!settings.wake && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) { console.warn('wakeLock', e); }
+  btn.querySelector('span').textContent = 'Bildschirm wach halten: ' + (settings.wake ? 'an' : 'aus');
+  btn.setAttribute('aria-pressed', String(settings.wake));
+}
+
+function renderThemes() {
+  const grp = (mode, label) => `<div class="theme-group">${label}</div><div class="theme-list">` + THEMES.filter(t => t.mode === mode).map(t =>
+    `<button type="button" class="theme-btn" data-set-theme="${t.id}" aria-pressed="false"><i style="--swatch-a:${t.sw[0]};--swatch-b:${t.sw[1]}" aria-hidden="true"></i>${esc(t.name)}</button>`).join('') + '</div>';
+  $('#themes').innerHTML = grp('dark', '🌙 Dunkel') + grp('light', '☀️ Hell');
+}
+function applyTheme() {
+  const t = THEMES.find(x => x.id === settings.theme) || THEMES[0];
+  settings.theme = t.id;
+  document.documentElement.dataset.theme = t.id;
+  document.documentElement.dataset.mode = t.mode;
+  document.querySelectorAll('.theme-btn').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.setTheme === settings.theme)));
+  const c = getComputedStyle(document.documentElement).getPropertyValue('--bg-solid').trim();
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', c || '#16191c');
+}
+function applyScales() {
+  settings.prodStep = Math.max(-2, Math.min(3, settings.prodStep | 0));
+  settings.orderStep = Math.max(-2, Math.min(3, settings.orderStep | 0));
+  const r = document.documentElement.style;
+  r.setProperty('--prod-scale', String(1 + settings.prodStep * 0.12));
+  r.setProperty('--order-scale', String(1 + settings.orderStep * 0.08));
+  r.setProperty('--order-w', (settings.orderW || ORDER_W_DEFAULT) + 'px');
+  syncResizer();
+}
+const ORDER_W_MIN = 340, ORDER_W_DEFAULT = 430, orderWMax = () => Math.max(ORDER_W_MIN, Math.round(window.innerWidth * 0.58));
+function syncResizer() {
+  const r = $('#resizer'); if (!r) return;
+  const w = settings.orderW || ORDER_W_DEFAULT;
+  r.setAttribute('aria-valuemin', ORDER_W_MIN); r.setAttribute('aria-valuemax', orderWMax());
+  r.setAttribute('aria-valuenow', w); r.setAttribute('aria-valuetext', `Kasse ${w} Pixel breit`);
+}
+function setOrderW(w) {
+  settings.orderW = Math.round(Math.max(ORDER_W_MIN, Math.min(w, orderWMax())));
+  document.documentElement.style.setProperty('--order-w', settings.orderW + 'px');
+  syncResizer();
+}
+function initResizer() {
+  const r = $('#resizer'), panel = $('#orderPanel'); let x0 = 0, w0 = 0, on = false;
+  r.addEventListener('pointerdown', e => { on = true; x0 = e.clientX; w0 = panel.getBoundingClientRect().width; r.setPointerCapture(e.pointerId); e.preventDefault(); });
+  r.addEventListener('pointermove', e => { if (on) setOrderW(w0 - (e.clientX - x0)); });
+  const end = () => { if (on) { on = false; saveSettings(); } };
+  r.addEventListener('pointerup', end); r.addEventListener('pointercancel', end);
+  r.addEventListener('dblclick', () => { settings.orderW = ORDER_W_DEFAULT; applyScales(); saveSettings(); });
+  r.addEventListener('keydown', e => {          // Pfeil links = Kasse breiter, rechts = schmaler, Pos1 = Standard
+    const step = e.shiftKey ? 60 : 20, cur = panel.getBoundingClientRect().width;
+    if (e.key === 'ArrowLeft') setOrderW(cur + step);
+    else if (e.key === 'ArrowRight') setOrderW(cur - step);
+    else if (e.key === 'Home') setOrderW(ORDER_W_DEFAULT);
+    else return;
+    e.preventDefault(); saveSettings();
+  });
+  window.addEventListener('resize', syncResizer);
+}
+
+/* =========================================================
+   10. EVENTS & START
+   ========================================================= */
+function bindEvents() {
+  $('#grid').addEventListener('click', e => {
+    if (editMode) { const t = e.target.closest('.ptile'); if (t) openEditor(t.querySelector('.pbtn').dataset.id); return; }
+    const inf = e.target.closest('[data-info]'); if (inf) { openProductInfo(inf.dataset.info); return; }
+    const b = e.target.closest('.pbtn'); if (!b) return;
+    addItem(b.dataset.id, 1);
+    b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash');
+    clearTimeout(b._t); b._t = setTimeout(() => b.classList.remove('flash'), 450);
+    const row = $('#orderList').querySelector(`[data-id="${b.dataset.id}"]`); if (row) row.scrollIntoView({ block:'nearest' });
+  });
+  $('#orderList').addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const id = b.closest('.order-item').dataset.id, act = b.dataset.act;
+    if (act === 'plus') addItem(id, 1); else if (act === 'minus') addItem(id, -1); else addItem(id, -Infinity);
+  });
+  $('#btnLastBon').addEventListener('click', openLastBon);
+  $('#btnClear').addEventListener('click', async () => {
+    if (await ask({ title:'Bestellung leeren?', text:'Alle Artikel der aktuellen Bestellung werden entfernt.', ok:'Leeren', danger:true })) {
+      state = { order:{}, given:'' }; $('#given').value = ''; saveState(); renderOrder();
+    }
+  });
+  $('#money').addEventListener('click', e => {
+    const b = e.target.closest('.money-btn'); if (!b) return;
+    if (b.dataset.exact) { const t = orderTotal(); setGiven(t ? num(t) : ''); return; }
+    const cur = parseEuro(state.given);
+    setGiven(num((cur > 0 ? cur : 0) + Number(b.dataset.cents)));
+  });
+  $('#given').addEventListener('input', e => { state.given = e.target.value; saveState(); updateChange(); });
+  $('#given').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
+  $('#btnGivenClear').addEventListener('click', () => setGiven(''));
+  $('#givenCard').addEventListener('click', e => { if (!e.target.closest('button')) $('#given').focus(); });
+  $('#btnPay').addEventListener('click', () => capture(false));
+  $('#btnPayPrint').addEventListener('click', () => capture(true));
+
+  document.querySelectorAll('[data-font]').forEach(b => b.addEventListener('click', () => {
+    const key = b.dataset.font === 'prod' ? 'prodStep' : 'orderStep';
+    settings[key] += Number(b.dataset.step); applyScales(); saveSettings();
+  }));
+  document.querySelectorAll('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+
+  $('#btnLog').addEventListener('click', () => openLog(Store.log.length || !Store.archive.length ? 'log' : 'archive'));
+  $('#logDay').addEventListener('change', renderLog);
+  $('#logList').addEventListener('click', e => {
+    const s = e.target.closest('[data-storno]'); if (s) return storno(s.dataset.storno);
+    const r = e.target.closest('[data-reprint]'); if (r) { const en = allEntries().find(x => x.id === r.dataset.reprint); if (en) printHtml(bonHtml(en, true)); }
+  });
+  $('#btnCsv2').addEventListener('click', exportFromLog);
+  $('#logStats').addEventListener('click', e => { const v = e.target.closest('[data-view]'); if (v) { logView = v.dataset.view; renderLog(); } });
+  $('#logSrc').addEventListener('click', e => { const b = e.target.closest('[data-src]'); if (b) { logSource = b.dataset.src; renderLog(); } });
+  $('#logInfo').addEventListener('click', e => {
+    const g = e.target.closest('[data-goto]'); if (g) { logSource = g.dataset.goto; renderLog(); }
+    if (e.target.closest('#btnRestoreArc')) restoreArchive();
+  });
+  $('#btnPrintDay').addEventListener('click', () => printHtml(dayReportHtml()));
+
+  $('#btnMenu').addEventListener('click', () => { updateExportInfo(); $('#dlgMenu').showModal(); });
+  $('#btnCsv').addEventListener('click', () => exportCsv(allEntries(), 'alle'));
+  $('#btnShowArchive').addEventListener('click', () => { $('#dlgMenu').close(); openLog('archive'); });
+  $('#btnBackup').addEventListener('click', exportBackup);
+  $('#btnImport').addEventListener('click', () => $('#fileImport').click());
+  $('#fileImport').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackup(f); });
+  $('#btnRescue').addEventListener('click', openRescue);
+  $('#btnCopy').addEventListener('click', copyRescue);
+  $('#btnRescueWipe').addEventListener('click', factoryReset);    // gleiche Funktion wie „Komplett zurücksetzen“
+  $('#btnRescueSave').addEventListener('click', () => saveFile(`pottschatz_rettung_${stamp()}.json`, $('#rescueText').value, 'application/json'));
+  $('#btnArchive').addEventListener('click', archiveLog);
+  $('#btnReset').addEventListener('click', factoryReset);
+  $('#themes').addEventListener('click', e => { const b = e.target.closest('.theme-btn'); if (b) { settings.theme = b.dataset.setTheme; applyTheme(); saveSettings(); } });
+  $('#btnWake').addEventListener('click', () => { settings.wake = !settings.wake; saveSettings(); applyWake(); });
+  $('#btnReload').addEventListener('click', async () => {
+    if (!navigator.onLine && swState !== 'ready') {
+      const ok = await ask({ title:'⚠️ Offline & nicht offline-fähig', danger:true, ok:'Trotzdem neu laden',
+        text:'Ohne Internet kann die Kasse nach dem Neuladen evtl. NICHT mehr geöffnet werden.\nDie Daten bleiben gespeichert, aber die Seite fehlt.\n\nTrotzdem neu laden?' });
+      if (!ok) return;
+    }
+    location.reload();
+  });
+  const offlineHelp = () => ask({ title:'📴 Offline-Betrieb auf dem iPad', cancel:null,
+    text:'1. ALLE Dateien (index.html, sw.js, manifest.webmanifest, Icons) in denselben Ordner auf einen HTTPS-Webspace legen (z. B. GitHub Pages). Dateinamen klein schreiben!\n' +
+         '2. Mit Internet in Safari öffnen → Teilen → „Zum Home-Bildschirm“.\n' +
+         '3. Kasse NUR noch über das Home-Bildschirm-Symbol starten (eigener Datenspeicher!).\n' +
+         '4. Einmal mit Internet öffnen, bis „Offline-fähig“ (grüner Punkt) erscheint.\n' +
+         '5. Test: Flugmodus an → App schließen → neu öffnen → muss funktionieren.\n\n' +
+         `Status jetzt: ${swState === 'ready' ? 'offline-fähig ✅' : 'NICHT offline-fähig ⚠️'} · Speicher dauerhaft: ${persisted ? 'ja' : 'nicht bestätigt'}` });
+  $('#btnOfflineInfo').addEventListener('click', offlineHelp);
+  $('#chipOffline').addEventListener('click', async () => {
+    if (!updateReady) return offlineHelp();
+    if (busy) return;
+    const ok = await ask({ title:'Neue Version verfügbar', text:'Die Kasse wird neu geladen. Offene Bestellung und alle Buchungen bleiben erhalten.', ok:'Jetzt aktualisieren', cancel:'Später' });
+    if (ok) location.reload();
+  });
+
+  window.addEventListener('online', updateChips);
+  window.addEventListener('offline', updateChips);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') applyWake(); });
+  window.addEventListener('storage', e => {             // zweiter Tab: Daten zusammenführen statt überschreiben
+    if (e.key === K.products) { applyOverrides(ls.get(K.products, {})); renderProducts(); renderOrder(); return; }
+    if (e.key === K.meta) { const m = getMeta(); if (m.resetTs && m.resetTs !== resetTs) { location.reload(); return; } }
+    if (e.key === K.log && Store.ready) { Store.log = mergeById(Store.log, ls.get(K.log, [])); updateChips(); if ($('#dlgLog').open) renderLog(); }
+  });
+  document.addEventListener('pointerdown', requestPersist, { once:true });
+  document.addEventListener('pointerdown', () => { if (toastSticky) hideToast(); }, true);
+  document.addEventListener('keydown', () => { if (toastSticky) hideToast(); }, true);
+}
+
+async function init() {
+  $('#title').textContent = CONFIG.title;
+  renderThemes(); applyTheme(); applyScales();
+  applyOverrides(ls.get(K.products, null)); renderProducts(); loadState(); $('#given').value = state.given; renderOrder();
+  bindEvents(); initResizer(); updateChips();
+  try {
+    await Store.init();
+    const io = await idb.get(K.products);
+    if (!ls.get(K.products, null) && io && Object.keys(io).length) { applyOverrides(io); ls.set(K.products, productOverrides); renderProducts(); renderOrder(); }
+    else idb.set(K.products, productOverrides);
+  }
+  catch (e) { console.error(e); Store.ready = true; toast('⚠️', 'Speicher-Problem', 'Bitte „Daten retten“ prüfen', true, 4000); }
+  $('#btnEditProducts').addEventListener('click', async () => { $('#dlgMenu').close(); await setEditMode(true); });
+  $('#btnEditDone').addEventListener('click', () => setEditMode(false));
+  $('#btnInfoEdit').addEventListener('click', async () => { const pid = $('#btnInfoEdit').dataset.pid; $('#dlgInfo').close(); if (await setEditMode(true)) openEditor(pid); });
+  $('#edSave').addEventListener('click', saveEditor);
+  $('#edReset').addEventListener('click', resetEditor);
+  ['#edName', '#edPrice'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveEditor(); } }));
+  ['#edName', '#edPrice'].forEach(id => $(id).addEventListener('input', () => { $(id).classList.remove('invalid'); if (!$('#edName').classList.contains('invalid') && !$('#edPrice').classList.contains('invalid')) $('#edErr').hidden = true; }));
+  setPayEnabled(true); updateChips(); tickClock(); setInterval(tickClock, 15000);
+  if (Store.migrated) toast('📦', 'Alte Daten übernommen', `${Store.migrated} Bons aus Version 9.7`, false, 3000);
+  requestPersist(); registerSW(); applyWake();
+}
+init();
+</script>
+</body>
+</html>
